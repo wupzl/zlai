@@ -1,4 +1,4 @@
-# Application base configuration
+﻿# Application base configuration
 spring:
   application:
     name: backend
@@ -63,18 +63,6 @@ server:
       charset: UTF-8
       enabled: true
       force: true
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
-  endpoint:
-    health:
-      show-details: when_authorized
-  metrics:
-    tags:
-      application: ${spring.application.name}
-
 # MyBatis-Plus configuration
 mybatis-plus:
   configuration:
@@ -279,3 +267,12 @@ resilience4j:
       chatStream:
         maxAttempts: 2
         waitDuration: 300ms
+
+management:
+  endpoints:
+    enabled-by-default: false
+  endpoint:
+    health:
+      enabled: false
+  server:
+    port: -1

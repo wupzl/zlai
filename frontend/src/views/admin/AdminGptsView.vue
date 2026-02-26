@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <section class="panel">
     <header class="panel-header">
       <div>
@@ -84,7 +84,7 @@
 </template>
 
 <script>
-import { apiRequest } from "../../api";
+import { apiRequest, API_BASE } from "../../api";
 
 export default {
   name: "AdminGptsView",
@@ -218,7 +218,7 @@ export default {
     },
     async downloadCsv(path, filename) {
       const token = localStorage.getItem("accessToken") || "";
-      const res = await fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8080"}${path}`, {
+      const res = await fetch(`${API_BASE}${path}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       if (!res.ok) {
@@ -251,3 +251,4 @@ export default {
   }
 };
 </script>
+

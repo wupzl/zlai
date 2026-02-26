@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080";
+﻿const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
 
 export function getToken() {
   return localStorage.getItem("accessToken") || "";
@@ -149,3 +149,5 @@ export async function apiRequest(path, options = {}) {
 }
 
 export { API_BASE };
+
+

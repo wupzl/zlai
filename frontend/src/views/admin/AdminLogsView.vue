@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <section class="panel">
     <header class="panel-header">
       <div>
@@ -76,7 +76,7 @@
 </template>
 
 <script>
-import { apiRequest } from "../../api";
+import { apiRequest, API_BASE } from "../../api";
 
 export default {
   name: "AdminLogsView",
@@ -110,7 +110,7 @@ export default {
         type: "login",
         typeLabel: "Login",
         title: `${l.username || "User"} ${l.success ? "login success" : "login failed"}`,
-        meta: `${l.ipAddress || "-"} · ${l.loginTime || "-"}`,
+        meta: `${l.ipAddress || "-"} 路 ${l.loginTime || "-"}`,
         time: l.loginTime,
         user: l.username || l.userId,
         statusText: l.success ? "SUCCESS" : "FAILED",
@@ -121,8 +121,8 @@ export default {
         key: `token-${t.id}`,
         type: "token",
         typeLabel: "Token",
-        title: `${t.model || "model"} · ${t.totalTokens || 0} tokens`,
-        meta: `${t.userId || "-"} · ${t.chatId || "-"} · ${t.createdAt || "-"}`,
+        title: `${t.model || "model"} 路 ${t.totalTokens || 0} tokens`,
+        meta: `${t.userId || "-"} 路 ${t.chatId || "-"} 路 ${t.createdAt || "-"}`,
         time: t.createdAt,
         user: t.userId,
         statusText: "SUCCESS",
@@ -133,8 +133,8 @@ export default {
         key: `system-${s.id}`,
         type: "system",
         typeLabel: "System",
-        title: `${s.module || "SYSTEM"} · ${s.operation || "-"}`,
-        meta: `${s.requestIp || "-"} · ${s.createdAt || "-"}`,
+        title: `${s.module || "SYSTEM"} 路 ${s.operation || "-"}`,
+        meta: `${s.requestIp || "-"} 路 ${s.createdAt || "-"}`,
         time: s.createdAt,
         user: s.userId,
         statusText: s.status || "UNKNOWN",
@@ -209,7 +209,7 @@ export default {
   ,
     async downloadCsv(path, filename) {
       const token = localStorage.getItem("accessToken") || "";
-      const res = await fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8080"}${path}`, {
+      const res = await fetch(`${API_BASE}${path}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       if (!res.ok) {
@@ -228,3 +228,4 @@ export default {
   }
 };
 </script>
+

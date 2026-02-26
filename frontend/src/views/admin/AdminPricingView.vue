@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <section class="panel">
     <header class="panel-header">
       <div>
@@ -29,7 +29,7 @@
           <div class="session-title">{{ p.model }}</div>
           <div class="session-meta">
             Current rate: x{{ formatRate(p.multiplier) }}
-            <span v-if="p.updatedAt"> · {{ String(p.updatedAt).slice(0, 10) }}</span>
+            <span v-if="p.updatedAt"> 路 {{ String(p.updatedAt).slice(0, 10) }}</span>
           </div>
         </div>
         <div class="list-actions">
@@ -71,8 +71,8 @@
         <div>
           <div class="session-title">{{ log.model }}</div>
           <div class="session-meta">
-            {{ formatRate(log.oldMultiplier) }} → {{ formatRate(log.newMultiplier) }}
-            · {{ String(log.updatedAt).slice(0, 19).replace('T',' ') }}
+            {{ formatRate(log.oldMultiplier) }} 鈫?{{ formatRate(log.newMultiplier) }}
+            路 {{ String(log.updatedAt).slice(0, 19).replace('T',' ') }}
           </div>
         </div>
         <div class="session-meta">adminId: {{ log.updatedBy || "-" }}</div>
@@ -85,7 +85,7 @@
 </template>
 
 <script>
-import { apiRequest } from "../../api";
+import { apiRequest, API_BASE } from "../../api";
 
 export default {
   name: "AdminPricingView",
@@ -178,7 +178,7 @@ export default {
     },
     async downloadCsv(path, filename) {
       const token = localStorage.getItem("accessToken") || "";
-      const res = await fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8080"}${path}`, {
+      const res = await fetch(`${API_BASE}${path}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       if (!res.ok) {
@@ -213,3 +213,4 @@ export default {
   }
 };
 </script>
+
