@@ -114,4 +114,4 @@ It is designed to demonstrate production-grade architecture for enterprise inter
 
 ---
 
-This document is a high-level overview. For setup instructions, see `readme.md`.
+This document is a high-level overview. For setup instructions, see `README.md`.

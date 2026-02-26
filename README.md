@@ -34,7 +34,8 @@ psql -U postgres -d zl_ai_rag -f backend/db/zlai_pg.sql
 ```
 
 ## 3. Configuration (Local Dev)
-Edit `backend/src/main/resources/application.yaml` or `backend/.env.properties`.
+Use `backend/.env.properties` for local Spring Boot startup.
+`application.yaml` uses `${...}` placeholders and resolves from that properties file (or system env).
 
 ### Core keys
 - `APP_AI_DEEPSEEK_KEY`
@@ -84,6 +85,10 @@ From `backend/db/seed.sql` (change passwords before production):
 
 ## 7. Docker (Recommended for Cross-Platform)
 Copy `.env.example` to `.env` and fill your secrets. `.env` is ignored by Git.
+
+Important:
+- Local backend (`mvn spring-boot:run`): reads `backend/.env.properties`
+- Docker Compose (`docker compose up`): reads project root `.env`
 
 ```
 docker compose up -d --build
