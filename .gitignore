@@ -35,3 +35,12 @@ build/
 # Local env files (do not commit)
 .env
 .env.properties
+test/backend_app.jar
+test/backend_app.jar
+backend/target/
+frontend/dist/
+*.jar
+test/backend_app.jar
+test/jarcheck/
+backend/target/
+frontend/dist/
