@@ -118,7 +118,7 @@ If you deploy on Linux or another host:
 
 ## 8. Admin OCR Limits
 Admins can configure OCR limits in:
-`Admin Console → Settings → OCR Limits`
+`Admin Console -> Settings -> OCR Limits`
 
 Normal users are rate-limited and size-limited. Admins bypass limits.
 
@@ -157,3 +157,8 @@ Logs are saved in:
 - If web search is blocked, enable Bocha and disable Wikipedia in admin settings.
 - For real LLM performance tests, disable mock and set proper API keys.
 - Ensure Redis and PostgreSQL are running before backend startup.
+
+
+> Frontend API base note:
+> - For Docker deployment (same-origin /api via Nginx), keep VITE_API_BASE empty.
+> - Set VITE_API_BASE only when you intentionally want cross-origin API calls.
