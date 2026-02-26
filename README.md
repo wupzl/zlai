@@ -162,3 +162,15 @@ Logs are saved in:
 > Frontend API base note:
 > - For Docker deployment (same-origin /api via Nginx), keep VITE_API_BASE empty.
 > - Set VITE_API_BASE only when you intentionally want cross-origin API calls.
+
+## CORS Configuration
+You can configure CORS without editing Java code via environment variables:
+
+- `APP_CORS_ALLOWED_ORIGINS` (comma-separated exact origins)
+- `APP_CORS_ALLOWED_ORIGIN_PATTERNS` (comma-separated patterns, e.g. https://*.example.com)
+
+Examples:
+
+```env
+APP_CORS_ALLOWED_ORIGIN_PATTERNS=https://zlai.me,https://www.zlai.me
+```

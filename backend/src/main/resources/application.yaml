@@ -1,4 +1,4 @@
-﻿# Application base configuration
+# Application base configuration
 spring:
   application:
     name: backend
@@ -73,6 +73,12 @@ mybatis-plus:
 
 # Application custom configuration
 app:
+  cors:
+    allowed-origin-patterns:
+      - "http://localhost:*"
+      - "http://127.0.0.1:*"
+      - "https://localhost:*"
+      - "https://127.0.0.1:*"
   llm:
     mock-enabled: false
   ai:
@@ -276,3 +282,4 @@ management:
       enabled: false
   server:
     port: -1
+
