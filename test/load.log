@@ -1,0 +1,26 @@
+
+         /\      Grafana   /‾‾/
+    /\  /  \     |\  __   /  /
+   /  \/    \    | |/ /  /   ‾‾\
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/
+
+
+     execution: local
+        script: k6-load.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 30 max VUs, 1m30s max duration (incl. graceful stop):
+              * default: Up to 30 looping VUs for 1m0s over 4 stages (gracefulRampDown: 30s, gracefulStop: 30s)
+
+
+Rate limited (429) responses: 0
+Server errors (5xx): 0
+Message success: 889, fail: 0
+Stream success: 0, fail: 0
+Empty message responses: 0
+Message not persisted: 0
+Result: PASS
+
+running (1m00.8s), 00/30 VUs, 889 complete and 0 interrupted iterations
+default ✓ [======================================] 00/30 VUs  1m0s

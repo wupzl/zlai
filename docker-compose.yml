@@ -1,0 +1,112 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: zlai-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-zl-ai2}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/db/zlai.sql:/docker-entrypoint-initdb.d/01_zlai.sql:ro
+      - ./backend/db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+
+  redis:
+    image: redis:7-alpine
+    container_name: zlai-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-change-me}"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: zlai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PG_DATABASE:-zl_ai_rag}
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-change-me}
+      TZ: Asia/Shanghai
+    ports:
+      - "5455:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./backend/db/zlai_pg.sql:/docker-entrypoint-initdb.d/01_zlai_pg.sql:ro
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zlai-backend
+    restart: unless-stopped
+    depends_on:
+      - mysql
+      - redis
+      - postgres
+    environment:
+      SPRING_PROFILES_ACTIVE: default
+      SPRING_DATASOURCE_URL: jdbc:mysql://${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306}/${MYSQL_DATABASE:-zl-ai2}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-root}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-redis}
+      SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+      APP_RAG_DATASOURCE_URL: jdbc:postgresql://${PG_HOST:-postgres}:${PG_PORT:-5432}/${PG_DATABASE:-zl_ai_rag}
+      APP_RAG_DATASOURCE_USERNAME: ${PG_USER:-postgres}
+      APP_RAG_DATASOURCE_PASSWORD: ${PG_PASSWORD:-change-me}
+      APP_RAG_OCR_TESSDATA_PATH: /usr/share/tesseract-ocr/5/tessdata
+      TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
+      SPRING_AI_OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.deepseek.com/v1}
+      SPRING_AI_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      APP_AI_DEEPSEEK_KEY: ${DEEPSEEK_API_KEY:-}
+      APP_AI_DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      APP_AI_CLAUDE_KEY: ${CLAUDE_API_KEY:-}
+      APP_AI_CLAUDE_BASE_URL: ${CLAUDE_BASE_URL:-https://api.gptsapi.net}
+      APP_AI_OPENAI_KEY: ${OPENAI_API_KEY:-}
+      APP_RAG_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://api.gptsapi.net/v1}
+      APP_RAG_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      APP_RAG_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      APP_TOOLS_SEARCH_BOCHA_ENABLED: ${BOCHA_ENABLED:-true}
+      APP_TOOLS_SEARCH_BOCHA_API_KEY: ${BOCHA_API_KEY:-}
+      APP_TOOLS_SEARCH_BOCHA_ENDPOINT: ${BOCHA_ENDPOINT:-https://api.bocha.cn/v1/web-search}
+      APP_TOOLS_SEARCH_BAIDU_ENABLED: ${BAIDU_ENABLED:-true}
+      APP_TOOLS_SEARCH_WIKIPEDIA_ENABLED: ${WIKIPEDIA_ENABLED:-false}
+      APP_TOOLS_SEARCH_BAIKE_ENABLED: ${BAIKE_ENABLED:-false}
+      APP_TOOLS_SEARCH_WIKIPEDIA_PROXY_ENABLED: ${WIKIPEDIA_PROXY_ENABLED:-false}
+      APP_TOOLS_SEARCH_WIKIPEDIA_PROXY_URL: ${WIKIPEDIA_PROXY_URL:-}
+      APP_TOOLS_SEARCH_WIKIPEDIA_USER_AGENT: "${WIKIPEDIA_USER_AGENT:-zlAI/1.0 (contact: tomchares0@gmail.com)}"
+      APP_TOOLS_SEARCH_SEARX_ENABLED: ${SEARX_ENABLED:-false}
+      APP_TOOLS_SEARCH_SEARX_URL: ${SEARX_URL:-}
+      APP_TOOLS_SEARCH_SERPAPI_KEY: ${SERPAPI_KEY:-}
+      APP_TOOLS_SEARCH_SERPAPI_ENGINE: ${SERPAPI_ENGINE:-baidu}
+      APP_JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-me}
+      APP_JWT_REFRESHSECRET: ${JWT_REFRESH_SECRET:-change-me}
+    ports:
+      - "8080:8080"
+    dns:
+      - 8.8.8.8
+      - 114.114.114.114
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8080}
+    container_name: zlai-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  mysql_data:
+  redis_data:
+  pg_data:

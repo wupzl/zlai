@@ -1,0 +1,57 @@
+
+         /\      Grafana   /‾‾/
+    /\  /  \     |\  __   /  /
+   /  \/    \    | |/ /  /   ‾‾\
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/
+
+
+     execution: local
+        script: k6-rag.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 5 max VUs, 1m10s max duration (incl. graceful stop):
+              * default: Up to 5 looping VUs for 40s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s)
+
+
+
+  █ THRESHOLDS
+
+    http_req_duration
+    ✓ 'p(95)<4000' p(95)=511.13ms
+
+    http_req_failed
+    ✓ 'rate<0.05' rate=0.92%
+
+
+  █ TOTAL RESULTS
+
+    checks_total.......: 72     1.795174/s
+    checks_succeeded...: 98.61% 71 out of 72
+    checks_failed......: 1.38%  1 out of 72
+
+    ✓ rag ingest ok
+    ✗ rag search ok
+      ↳  97% — ✓ 35 / ✗ 1
+
+    HTTP
+    http_req_duration..............: avg=302.71ms min=5.49ms  med=310.76ms max=614.3ms p(90)=455.8ms  p(95)=511.13ms
+      { expected_response:true }...: avg=305.49ms min=115.2ms med=310.88ms max=614.3ms p(90)=458.57ms p(95)=511.35ms
+    http_req_failed................: 0.92%  1 out of 108
+    http_reqs......................: 108    2.692761/s
+
+    EXECUTION
+    iteration_duration.............: avg=2.91s    min=2.6s    med=2.88s    max=3.45s   p(90)=3.1s     p(95)=3.22s
+    iterations.....................: 36     0.897587/s
+    vus............................: 1      min=1        max=5
+    vus_max........................: 5      min=5        max=5
+
+    NETWORK
+    data_received..................: 437 kB 11 kB/s
+    data_sent......................: 165 kB 4.1 kB/s
+
+
+
+
+running (0m40.1s), 0/5 VUs, 36 complete and 0 interrupted iterations
+default ✓ [======================================] 0/5 VUs  40s

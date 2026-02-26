@@ -1,0 +1,281 @@
+# Application base configuration
+spring:
+  application:
+    name: backend
+  config:
+    import: optional:file:.env.properties,optional:file:../.env.properties
+  web:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 500MB
+
+  ai:
+    openai:
+      base-url: ${SPRING_AI_OPENAI_BASE_URL:${OPENAI_BASE_URL:${EMBEDDING_BASE_URL:https://api.gptsapi.net/v1}}}
+      api-key: ${SPRING_AI_OPENAI_API_KEY:${OPENAI_API_KEY:${EMBEDDING_API_KEY:}}}
+      chat:
+        options:
+          model: deepseek-chat
+      embedding:
+        base-url: ${app.rag.embedding.base-url:}
+        api-key: ${app.rag.embedding.api-key:}
+        options:
+          model: ${app.rag.embedding.model:text-embedding-3-small}
+
+  # Database configuration
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/zl-ai2?useSSL=false&serverTimezone=Asia/Shanghai}
+    username: ${SPRING_DATASOURCE_USERNAME:${MYSQL_USER:root}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${MYSQL_ROOT_PASSWORD:123456}}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-test-query: SELECT 1
+
+  # Redis configuration
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:${REDIS_HOST:127.0.0.1}}
+      port: ${SPRING_DATA_REDIS_PORT:${REDIS_PORT:6379}}
+      password: ${SPRING_DATA_REDIS_PASSWORD:${REDIS_PASSWORD:}}
+      timeout: 2000ms
+    lettuce:
+      pool:
+        max-active: 100
+        max-idle: 50
+        min-idle: 10
+
+server:
+  tomcat:
+    max-http-form-post-size: 500MB
+    max-swallow-size: -1
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# MyBatis-Plus configuration
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+# Application custom configuration
+app:
+  llm:
+    mock-enabled: false
+  ai:
+    deepseek:
+      key: ${APP_AI_DEEPSEEK_KEY:${DEEPSEEK_API_KEY:}}
+      base-url: ${APP_AI_DEEPSEEK_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com}}
+    claude:
+      key: ${APP_AI_CLAUDE_KEY:${CLAUDE_API_KEY:}}
+      base-url: ${APP_AI_CLAUDE_BASE_URL:${CLAUDE_BASE_URL:https://api.gptsapi.net}}
+      max-tokens: 1024
+    openai:
+      key: ${APP_AI_OPENAI_KEY:${OPENAI_API_KEY:}}
+      base-url: ${APP_AI_OPENAI_BASE_URL:${OPENAI_BASE_URL:}}
+      stream-enabled: ${APP_AI_OPENAI_STREAM_ENABLED:false}
+
+
+  jwt:
+    access-secret: your-access-secret-here
+    refreshSecret: your-refresh-secret-here
+    issuer: ai-chat-platform
+  chat:
+    rate-limit:
+      stream-user-limit: 200
+      stream-ip-limit: 500
+      stream-window-seconds: 60
+      message-user-limit: 500
+      message-ip-limit: 1000
+      message-window-seconds: 60
+      session-user-limit: 200
+      session-ip-limit: 500
+      session-window-seconds: 60
+      default-user-limit: 800
+      default-ip-limit: 2000
+      default-window-seconds: 60
+    context:
+      window-messages: 20
+      warn-messages: 50
+    stream-timeout-seconds: 90
+    billing:
+      max-completion-tokens: 2048
+      available-models:
+        - deepseek-chat
+        - claude-opus-4-5-20251101
+        - claude-sonnet-4-5-20250929
+        - gpt-4o
+        - gpt-4o-mini
+        - gpt-4.1
+        - gpt-4.1-mini
+        - gpt-4.1-nano
+      model-multipliers:
+        deepseek-chat: 1.0
+        claude-opus-4-5-20251101: 3.4
+        claude-sonnet-4-5-20250929: 2.8
+        gpt-4o: 2.5
+        gpt-4o-mini: 1.5
+        gpt-4.1: 2.8
+        gpt-4.1-mini: 1.6
+        gpt-4.1-nano: 1.2
+      model-limits:
+        deepseek-chat:
+          max-messages: 20
+          max-chars: 8000
+          max-completion-tokens: 2048
+        claude-opus-4-5-20251101:
+          max-messages: 30
+          max-chars: 12000
+          max-completion-tokens: 3000
+        claude-sonnet-4-5-20250929:
+          max-messages: 30
+          max-chars: 12000
+          max-completion-tokens: 3000
+        gpt-4o:
+          max-messages: 25
+          max-chars: 10000
+          max-completion-tokens: 2500
+        gpt-4o-mini:
+          max-messages: 25
+          max-chars: 10000
+          max-completion-tokens: 2500
+        gpt-4.1:
+          max-messages: 25
+          max-chars: 10000
+          max-completion-tokens: 2500
+        gpt-4.1-mini:
+          max-messages: 25
+          max-chars: 10000
+          max-completion-tokens: 2500
+        gpt-4.1-nano:
+          max-messages: 25
+          max-chars: 10000
+          max-completion-tokens: 2500
+  gptstore:
+    auto-approve: false
+    blocked-keywords: []
+  agents:
+    executor:
+      core-pool-size: 10
+      max-pool-size: 50
+      queue-capacity: 100
+      await-termination-seconds: 30
+    multiagent-timeout-seconds: 20
+  webmvc:
+    async:
+      core-pool-size: 4
+      max-pool-size: 16
+      queue-capacity: 200
+  tools:
+    search:
+      searx-enabled: ${APP_TOOLS_SEARCH_SEARX_ENABLED:${SEARX_ENABLED:false}}
+      searx-url: ${APP_TOOLS_SEARCH_SEARX_URL:${SEARX_URL:}}
+      serpapi-key: ${APP_TOOLS_SEARCH_SERPAPI_KEY:${SERPAPI_KEY:}}
+      serpapi-engine: ${APP_TOOLS_SEARCH_SERPAPI_ENGINE:${SERPAPI_ENGINE:baidu}}
+      wikipedia-enabled: ${APP_TOOLS_SEARCH_WIKIPEDIA_ENABLED:${WIKIPEDIA_ENABLED:false}}
+      baike-enabled: ${APP_TOOLS_SEARCH_BAIKE_ENABLED:${BAIKE_ENABLED:false}}
+      bocha-enabled: ${APP_TOOLS_SEARCH_BOCHA_ENABLED:${BOCHA_ENABLED:true}}
+      baidu-enabled: ${APP_TOOLS_SEARCH_BAIDU_ENABLED:${BAIDU_ENABLED:true}}
+      bocha-api-key: ${APP_TOOLS_SEARCH_BOCHA_API_KEY:${BOCHA_API_KEY:}}
+      bocha-endpoint: ${APP_TOOLS_SEARCH_BOCHA_ENDPOINT:${BOCHA_ENDPOINT:https://api.bocha.cn/v1/web-search}}
+      wikipedia-proxy-enabled: ${APP_TOOLS_SEARCH_WIKIPEDIA_PROXY_ENABLED:${WIKIPEDIA_PROXY_ENABLED:false}}
+      wikipedia-proxy-url: ${APP_TOOLS_SEARCH_WIKIPEDIA_PROXY_URL:${WIKIPEDIA_PROXY_URL:}}
+      wikipedia-user-agent: "${APP_TOOLS_SEARCH_WIKIPEDIA_USER_AGENT:${WIKIPEDIA_USER_AGENT:zlAI/1.0 (contact: tomchares0@gmail.com)}}"
+  rag:
+    ingest-filepath-enabled: false
+    remote-images:
+      max-count: 20
+      max-bytes: 5242880
+      connect-timeout-ms: 5000
+      read-timeout-ms: 8000
+    vector-size: 1536
+    ocr:
+      enabled: true
+      tessdata-path: "D:\\Software\\tesseract\\tessdata"
+      language: "eng+chi_sim"
+      default-user-quota: 200
+      max-images-per-request: 50
+      max-image-bytes: 5242880
+      max-pdf-pages: 8
+      rate-limit-per-day: 200
+      rate-limit-window-seconds: 86400
+    default-top-k: 5
+    chunk-size: 800
+    chunk-overlap: 100
+    search:
+      strategy: mmr
+      min-score: 0.2
+      mmr-lambda: 0.7
+      mmr-candidate-multiplier: 4
+    datasource:
+      url: ${APP_RAG_DATASOURCE_URL:jdbc:postgresql://localhost:5432/zl_ai_rag}
+      username: ${APP_RAG_DATASOURCE_USERNAME:${PG_USER:postgres}}
+      password: ${APP_RAG_DATASOURCE_PASSWORD:${PG_PASSWORD:}}
+      driver-class-name: org.postgresql.Driver
+    embedding:
+      base-url: ${APP_RAG_EMBEDDING_BASE_URL:${EMBEDDING_BASE_URL:https://api.gptsapi.net/v1}}
+      api-key: ${APP_RAG_EMBEDDING_API_KEY:${EMBEDDING_API_KEY:}}
+      model: ${APP_RAG_EMBEDDING_MODEL:${EMBEDDING_MODEL:text-embedding-3-small}}
+  rate-limit:
+    global:
+      enabled: true
+      admin-bypass: true
+      window-seconds: 60
+      ip-limit: 300
+      user-limit: 200
+      whitelist-ips: []
+      whitelist-paths:
+        - /actuator
+        - /swagger-ui
+        - /v3/api-docs
+        - /doc.html
+        - /webjars
+        - /h2-console
+        - /error
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      chatStream:
+        slidingWindowSize: 20
+        minimumNumberOfCalls: 10
+        failureRateThreshold: 50
+        slowCallRateThreshold: 50
+        slowCallDurationThreshold: 3s
+        waitDurationInOpenState: 20s
+        permittedNumberOfCallsInHalfOpenState: 5
+  timelimiter:
+    instances:
+      chatStream:
+        timeoutDuration: 30s
+        cancelRunningFuture: true
+  retry:
+    instances:
+      chatStream:
+        maxAttempts: 2
+        waitDuration: 300ms

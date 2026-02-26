@@ -1,0 +1,548 @@
+15.jar (1.1 MB at 100 kB/s)
+168.0 [INFO] ------------------------------------------------------------------------
+168.0 [INFO] BUILD FAILURE
+168.0 [INFO] ------------------------------------------------------------------------
+168.0 [INFO] Total time:  02:46 min
+168.0 [INFO] Finished at: 2026-02-24T17:02:01Z
+168.0 [INFO] ------------------------------------------------------------------------
+168.0 [ERROR] Failed to execute goal on project backend: Could not resolve dependencies for project com.harmony:backend:jar:0.0.1-SNAPSHOT
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-starter-logging:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-starter-logging:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org: Temporary failure in name resolution
+168.0 [ERROR] dependency: ch.qos.logback:logback-classic:jar:1.5.22 (compile)
+168.0 [ERROR]   Could not transfer artifact ch.qos.logback:logback-classic:jar:1.5.22 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: ch.qos.logback:logback-core:jar:1.5.22 (compile)
+168.0 [ERROR]   Could not transfer artifact ch.qos.logback:logback-core:jar:1.5.22 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-context:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-context:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-expression:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-expression:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.fasterxml.jackson.datatype:jackson-datatype-jsr310:jar:2.19.4 (compile)
+168.0 [ERROR]   Could not transfer artifact com.fasterxml.jackson.datatype:jackson-datatype-jsr310:jar:2.19.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.fasterxml.jackson.core:jackson-annotations:jar:2.19.4 (compile)
+168.0 [ERROR]   Could not transfer artifact com.fasterxml.jackson.core:jackson-annotations:jar:2.19.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.fasterxml.jackson.core:jackson-core:jar:2.19.4 (compile)
+168.0 [ERROR]   Could not transfer artifact com.fasterxml.jackson.core:jackson-core:jar:2.19.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.fasterxml.jackson.core:jackson-databind:jar:2.19.4 (compile)
+168.0 [ERROR]   Could not transfer artifact com.fasterxml.jackson.core:jackson-databind:jar:2.19.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-starter-aop:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-starter-aop:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-aop:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-aop:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.aspectj:aspectjweaver:jar:1.9.25.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.aspectj:aspectjweaver:jar:1.9.25.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-starter-validation:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-starter-validation:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tomcat.embed:tomcat-embed-el:jar:10.1.50 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tomcat.embed:tomcat-embed-el:jar:10.1.50 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.hibernate.validator:hibernate-validator:jar:8.0.3.Final (compile)
+168.0 [ERROR]   Could not transfer artifact org.hibernate.validator:hibernate-validator:jar:8.0.3.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: jakarta.validation:jakarta.validation-api:jar:3.0.2 (compile)
+168.0 [ERROR]   Could not transfer artifact jakarta.validation:jakarta.validation-api:jar:3.0.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.jboss.logging:jboss-logging:jar:3.6.1.Final (compile)
+168.0 [ERROR]   Could not transfer artifact org.jboss.logging:jboss-logging:jar:3.6.1.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.fasterxml:classmate:jar:1.7.1 (compile)
+168.0 [ERROR]   Could not transfer artifact com.fasterxml:classmate:jar:1.7.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-spring-boot3:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-spring-boot3:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-spring6:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-spring6:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-consumer:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-consumer:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-circularbuffer:jar:2.2.0 (runtime)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-circularbuffer:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-framework-common:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-framework-common:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.slf4j:slf4j-api:jar:2.0.17 (compile)
+168.0 [ERROR]   Could not transfer artifact org.slf4j:slf4j-api:jar:2.0.17 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-micrometer:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-micrometer:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-annotations:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-annotations:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-reactor:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-reactor:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.projectreactor:reactor-core:jar:3.7.14 (compile)
+168.0 [ERROR]   Could not transfer artifact io.projectreactor:reactor-core:jar:3.7.14 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.reactivestreams:reactive-streams:jar:1.0.4 (compile)
+168.0 [ERROR]   Could not transfer artifact org.reactivestreams:reactive-streams:jar:1.0.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-circuitbreaker:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-circuitbreaker:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-core:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-core:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-ratelimiter:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-ratelimiter:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-timelimiter:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-timelimiter:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-bulkhead:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-bulkhead:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.github.resilience4j:resilience4j-retry:jar:2.2.0 (compile)
+168.0 [ERROR]   Could not transfer artifact io.github.resilience4j:resilience4j-retry:jar:2.2.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-starter-actuator:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-starter-actuator:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-actuator-autoconfigure:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-actuator-autoconfigure:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-actuator:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-actuator:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.micrometer:micrometer-observation:jar:1.15.7 (compile)
+168.0 [ERROR]   Could not transfer artifact io.micrometer:micrometer-observation:jar:1.15.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.micrometer:micrometer-jakarta9:jar:1.15.7 (compile)
+168.0 [ERROR]   Could not transfer artifact io.micrometer:micrometer-jakarta9:jar:1.15.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.micrometer:micrometer-core:jar:1.15.7 (compile)
+168.0 [ERROR]   Could not transfer artifact io.micrometer:micrometer-core:jar:1.15.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.micrometer:micrometer-commons:jar:1.15.7 (compile)
+168.0 [ERROR]   Could not transfer artifact io.micrometer:micrometer-commons:jar:1.15.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.hdrhistogram:HdrHistogram:jar:2.2.2 (runtime)
+168.0 [ERROR]   Could not transfer artifact org.hdrhistogram:HdrHistogram:jar:2.2.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.latencyutils:LatencyUtils:jar:2.0.3 (runtime)
+168.0 [ERROR]   Could not transfer artifact org.latencyutils:LatencyUtils:jar:2.0.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-starter-webflux:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-starter-webflux:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-starter-reactor-netty:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-starter-reactor-netty:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.projectreactor.netty:reactor-netty-http:jar:1.2.13 (compile)
+168.0 [ERROR]   Could not transfer artifact io.projectreactor.netty:reactor-netty-http:jar:1.2.13 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-codec-http:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-codec-http:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-codec-http2:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-codec-http2:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-resolver-dns:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-resolver-dns:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-codec-dns:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-codec-dns:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-resolver-dns-native-macos:jar:osx-x86_64:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-resolver-dns-native-macos:jar:osx-x86_64:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-resolver-dns-classes-macos:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-resolver-dns-classes-macos:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-transport-native-epoll:jar:linux-x86_64:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-transport-native-epoll:jar:linux-x86_64:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-transport-classes-epoll:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-transport-classes-epoll:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.projectreactor.netty:reactor-netty-core:jar:1.2.13 (compile)
+168.0 [ERROR]   Could not transfer artifact io.projectreactor.netty:reactor-netty-core:jar:1.2.13 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-handler-proxy:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-handler-proxy:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-codec-socks:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-codec-socks:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-webflux:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-webflux:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.baomidou:mybatis-plus-spring-boot3-starter:jar:3.5.12 (compile)
+168.0 [ERROR]   Could not transfer artifact com.baomidou:mybatis-plus-spring-boot3-starter:jar:3.5.12 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.baomidou:mybatis-plus:jar:3.5.12 (compile)
+168.0 [ERROR]   Could not transfer artifact com.baomidou:mybatis-plus:jar:3.5.12 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.baomidou:mybatis-plus-core:jar:3.5.12 (compile)
+168.0 [ERROR]   Could not transfer artifact com.baomidou:mybatis-plus-core:jar:3.5.12 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.baomidou:mybatis-plus-annotation:jar:3.5.12 (compile)
+168.0 [ERROR]   Could not transfer artifact com.baomidou:mybatis-plus-annotation:jar:3.5.12 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.baomidou:mybatis-plus-spring:jar:3.5.12 (compile)
+168.0 [ERROR]   Could not transfer artifact com.baomidou:mybatis-plus-spring:jar:3.5.12 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.mybatis:mybatis:jar:3.5.19 (compile)
+168.0 [ERROR]   Could not transfer artifact org.mybatis:mybatis:jar:3.5.19 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.mybatis:mybatis-spring:jar:3.0.4 (compile)
+168.0 [ERROR]   Could not transfer artifact org.mybatis:mybatis-spring:jar:3.0.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.baomidou:mybatis-plus-spring-boot-autoconfigure:jar:3.5.12 (compile)
+168.0 [ERROR]   Could not transfer artifact com.baomidou:mybatis-plus-spring-boot-autoconfigure:jar:3.5.12 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-autoconfigure:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-autoconfigure:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-starter-jdbc:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-starter-jdbc:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.zaxxer:HikariCP:jar:6.3.3 (compile)
+168.0 [ERROR]   Could not transfer artifact com.zaxxer:HikariCP:jar:6.3.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-jdbc:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-jdbc:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.baomidou:mybatis-plus-jsqlparser:jar:3.5.12 (compile)
+168.0 [ERROR]   Could not transfer artifact com.baomidou:mybatis-plus-jsqlparser:jar:3.5.12 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.github.jsqlparser:jsqlparser:jar:5.1 (compile)
+168.0 [ERROR]   Could not transfer artifact com.github.jsqlparser:jsqlparser:jar:5.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.baomidou:mybatis-plus-jsqlparser-common:jar:3.5.12 (compile)
+168.0 [ERROR]   Could not transfer artifact com.baomidou:mybatis-plus-jsqlparser-common:jar:3.5.12 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.baomidou:mybatis-plus-extension:jar:3.5.12 (compile)
+168.0 [ERROR]   Could not transfer artifact com.baomidou:mybatis-plus-extension:jar:3.5.12 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.mysql:mysql-connector-j:jar:9.5.0 (runtime)
+168.0 [ERROR]   Could not transfer artifact com.mysql:mysql-connector-j:jar:9.5.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.postgresql:postgresql:jar:42.7.8 (compile)
+168.0 [ERROR]   Could not transfer artifact org.postgresql:postgresql:jar:42.7.8 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.checkerframework:checker-qual:jar:3.49.5 (runtime)
+168.0 [ERROR]   Could not transfer artifact org.checkerframework:checker-qual:jar:3.49.5 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.pgvector:pgvector:jar:0.1.6 (compile)
+168.0 [ERROR]   Could not transfer artifact com.pgvector:pgvector:jar:0.1.6 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-starter-model-openai:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-starter-model-openai:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-autoconfigure-model-openai:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-autoconfigure-model-openai:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-autoconfigure-model-tool:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-autoconfigure-model-tool:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-autoconfigure-retry:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-autoconfigure-retry:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-autoconfigure-model-chat-observation:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-autoconfigure-model-chat-observation:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-autoconfigure-model-embedding-observation:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-autoconfigure-model-embedding-observation:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-autoconfigure-model-image-observation:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-autoconfigure-model-image-observation:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-openai:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-openai:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-model:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-model:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-commons:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-commons:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.micrometer:context-propagation:jar:1.1.3 (compile)
+168.0 [ERROR]   Could not transfer artifact io.micrometer:context-propagation:jar:1.1.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-template-st:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-template-st:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.antlr:ST4:jar:4.3.4 (compile)
+168.0 [ERROR]   Could not transfer artifact org.antlr:ST4:jar:4.3.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.antlr:antlr-runtime:jar:3.5.3 (compile)
+168.0 [ERROR]   Could not transfer artifact org.antlr:antlr-runtime:jar:3.5.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-messaging:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-messaging:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.antlr:antlr4-runtime:jar:4.13.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.antlr:antlr4-runtime:jar:4.13.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.github.victools:jsonschema-module-swagger-2:jar:4.37.0 (compile)
+168.0 [ERROR]   Could not transfer artifact com.github.victools:jsonschema-module-swagger-2:jar:4.37.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.swagger.core.v3:swagger-annotations:jar:2.2.25 (compile)
+168.0 [ERROR]   Could not transfer artifact io.swagger.core.v3:swagger-annotations:jar:2.2.25 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-retry:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-retry:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.retry:spring-retry:jar:2.0.12 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.retry:spring-retry:jar:2.0.12 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.github.victools:jsonschema-generator:jar:4.37.0 (compile)
+168.0 [ERROR]   Could not transfer artifact com.github.victools:jsonschema-generator:jar:4.37.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.github.victools:jsonschema-module-jackson:jar:4.37.0 (compile)
+168.0 [ERROR]   Could not transfer artifact com.github.victools:jsonschema-module-jackson:jar:4.37.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-context-support:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-context-support:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-autoconfigure-model-chat-client:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-autoconfigure-model-chat-client:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-client-chat:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-client-chat:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.fasterxml.jackson.module:jackson-module-jsonSchema:jar:2.19.4 (compile)
+168.0 [ERROR]   Could not transfer artifact com.fasterxml.jackson.module:jackson-module-jsonSchema:jar:2.19.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: javax.validation:validation-api:jar:1.1.0.Final (compile)
+168.0 [ERROR]   Could not transfer artifact javax.validation:validation-api:jar:1.1.0.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.ai:spring-ai-autoconfigure-model-chat-memory:jar:1.0.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.ai:spring-ai-autoconfigure-model-chat-memory:jar:1.0.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: net.sourceforge.tess4j:tess4j:jar:5.13.0 (compile)
+168.0 [ERROR]   Could not transfer artifact net.sourceforge.tess4j:tess4j:jar:5.13.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: net.java.dev.jna:jna:jar:5.14.0 (compile)
+168.0 [ERROR]   Could not transfer artifact net.java.dev.jna:jna:jar:5.14.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.github.jai-imageio:jai-imageio-core:jar:1.4.0 (compile)
+168.0 [ERROR]   Could not transfer artifact com.github.jai-imageio:jai-imageio-core:jar:1.4.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.pdfbox:pdfbox-tools:jar:3.0.3 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.pdfbox:pdfbox-tools:jar:3.0.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.pdfbox:pdfbox-debugger:jar:3.0.3 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.pdfbox:pdfbox-debugger:jar:3.0.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: info.picocli:picocli:jar:4.7.6 (compile)
+168.0 [ERROR]   Could not transfer artifact info.picocli:picocli:jar:4.7.6 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.pdfbox:jbig2-imageio:jar:3.0.4 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.pdfbox:jbig2-imageio:jar:3.0.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: commons-io:commons-io:jar:2.16.1 (compile)
+168.0 [ERROR]   Could not transfer artifact commons-io:commons-io:jar:2.16.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: net.sourceforge.lept4j:lept4j:jar:1.19.1 (compile)
+168.0 [ERROR]   Could not transfer artifact net.sourceforge.lept4j:lept4j:jar:1.19.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.jboss:jboss-vfs:jar:3.2.17.Final (compile)
+168.0 [ERROR]   Could not transfer artifact org.jboss:jboss-vfs:jar:3.2.17.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-core:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-core:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parsers-standard-package:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parsers-standard-package:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-apple-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-apple-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-zip-commons:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-zip-commons:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.googlecode.plist:dd-plist:jar:1.27 (compile)
+168.0 [ERROR]   Could not transfer artifact com.googlecode.plist:dd-plist:jar:1.27 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-audiovideo-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-audiovideo-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.drewnoakes:metadata-extractor:jar:2.18.0 (compile)
+168.0 [ERROR]   Could not transfer artifact com.drewnoakes:metadata-extractor:jar:2.18.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.adobe.xmp:xmpcore:jar:6.1.11 (compile)
+168.0 [ERROR]   Could not transfer artifact com.adobe.xmp:xmpcore:jar:6.1.11 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-cad-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-cad-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-code-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-code-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.codelibs:jhighlight:jar:1.1.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.codelibs:jhighlight:jar:1.1.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.ccil.cowan.tagsoup:tagsoup:jar:1.2.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.ccil.cowan.tagsoup:tagsoup:jar:1.2.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.ow2.asm:asm:jar:9.6 (compile)
+168.0 [ERROR]   Could not transfer artifact org.ow2.asm:asm:jar:9.6 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.epam:parso:jar:2.0.14 (compile)
+168.0 [ERROR]   Could not transfer artifact com.epam:parso:jar:2.0.14 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.tallison:jmatio:jar:1.5 (compile)
+168.0 [ERROR]   Could not transfer artifact org.tallison:jmatio:jar:1.5 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-crypto-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-crypto-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.bouncycastle:bcmail-jdk18on:jar:1.76 (compile)
+168.0 [ERROR]   Could not transfer artifact org.bouncycastle:bcmail-jdk18on:jar:1.76 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.bouncycastle:bcutil-jdk18on:jar:1.76 (compile)
+168.0 [ERROR]   Could not transfer artifact org.bouncycastle:bcutil-jdk18on:jar:1.76 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.bouncycastle:bcpkix-jdk18on:jar:1.76 (compile)
+168.0 [ERROR]   Could not transfer artifact org.bouncycastle:bcpkix-jdk18on:jar:1.76 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.bouncycastle:bcprov-jdk18on:jar:1.76 (compile)
+168.0 [ERROR]   Could not transfer artifact org.bouncycastle:bcprov-jdk18on:jar:1.76 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-digest-commons:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-digest-commons:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: commons-codec:commons-codec:jar:1.18.0 (compile)
+168.0 [ERROR]   Could not transfer artifact commons-codec:commons-codec:jar:1.18.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-font-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-font-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-html-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-html-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-image-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-image-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-mail-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-mail-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-mail-commons:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-mail-commons:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.james:apache-mime4j-core:jar:0.8.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.james:apache-mime4j-core:jar:0.8.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.james:apache-mime4j-dom:jar:0.8.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.james:apache-mime4j-dom:jar:0.8.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-microsoft-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-microsoft-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.pff:java-libpst:jar:0.9.3 (compile)
+168.0 [ERROR]   Could not transfer artifact com.pff:java-libpst:jar:0.9.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.commons:commons-lang3:jar:3.17.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.commons:commons-lang3:jar:3.17.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.poi:poi:jar:5.2.3 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.poi:poi:jar:5.2.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.commons:commons-math3:jar:3.6.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.commons:commons-math3:jar:3.6.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.zaxxer:SparseBitSet:jar:1.2 (compile)
+168.0 [ERROR]   Could not transfer artifact com.zaxxer:SparseBitSet:jar:1.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.logging.log4j:log4j-api:jar:2.24.3 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.logging.log4j:log4j-api:jar:2.24.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.poi:poi-scratchpad:jar:5.2.3 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.poi:poi-scratchpad:jar:5.2.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.poi:poi-ooxml:jar:5.2.3 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.poi:poi-ooxml:jar:5.2.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.poi:poi-ooxml-lite:jar:5.2.3 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.poi:poi-ooxml-lite:jar:5.2.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.xmlbeans:xmlbeans:jar:5.1.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.xmlbeans:xmlbeans:jar:5.1.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.github.virtuald:curvesapi:jar:1.07 (compile)
+168.0 [ERROR]   Could not transfer artifact com.github.virtuald:curvesapi:jar:1.07 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.healthmarketscience.jackcess:jackcess:jar:4.0.5 (compile)
+168.0 [ERROR]   Could not transfer artifact com.healthmarketscience.jackcess:jackcess:jar:4.0.5 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.healthmarketscience.jackcess:jackcess-encrypt:jar:4.0.2 (compile)
+168.0 [ERROR]   Could not transfer artifact com.healthmarketscience.jackcess:jackcess-encrypt:jar:4.0.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.slf4j:jcl-over-slf4j:jar:2.0.17 (compile)
+168.0 [ERROR]   Could not transfer artifact org.slf4j:jcl-over-slf4j:jar:2.0.17 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-miscoffice-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-miscoffice-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.commons:commons-collections4:jar:4.4 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.commons:commons-collections4:jar:4.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.glassfish.jaxb:jaxb-runtime:jar:4.0.6 (compile)
+168.0 [ERROR]   Could not transfer artifact org.glassfish.jaxb:jaxb-runtime:jar:4.0.6 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.glassfish.jaxb:jaxb-core:jar:4.0.6 (compile)
+168.0 [ERROR]   Could not transfer artifact org.glassfish.jaxb:jaxb-core:jar:4.0.6 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.eclipse.angus:angus-activation:jar:2.0.3 (runtime)
+168.0 [ERROR]   Could not transfer artifact org.eclipse.angus:angus-activation:jar:2.0.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.glassfish.jaxb:txw2:jar:4.0.6 (compile)
+168.0 [ERROR]   Could not transfer artifact org.glassfish.jaxb:txw2:jar:4.0.6 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.sun.istack:istack-commons-runtime:jar:4.1.2 (compile)
+168.0 [ERROR]   Could not transfer artifact com.sun.istack:istack-commons-runtime:jar:4.1.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-news-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-news-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.rometools:rome:jar:2.1.0 (compile)
+168.0 [ERROR]   Could not transfer artifact com.rometools:rome:jar:2.1.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.rometools:rome-utils:jar:2.1.0 (compile)
+168.0 [ERROR]   Could not transfer artifact com.rometools:rome-utils:jar:2.1.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.jdom:jdom2:jar:2.0.6.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.jdom:jdom2:jar:2.0.6.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-ocr-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-ocr-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.commons:commons-exec:jar:1.3 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.commons:commons-exec:jar:1.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-pdf-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-pdf-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.pdfbox:jempbox:jar:1.8.17 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.pdfbox:jempbox:jar:1.8.17 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-pkg-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-pkg-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.tukaani:xz:jar:1.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.tukaani:xz:jar:1.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.brotli:dec:jar:0.1.2 (compile)
+168.0 [ERROR]   Could not transfer artifact org.brotli:dec:jar:0.1.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.github.junrar:junrar:jar:7.5.5 (compile)
+168.0 [ERROR]   Could not transfer artifact com.github.junrar:junrar:jar:7.5.5 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-text-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-text-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.github.albfernandez:juniversalchardet:jar:2.4.0 (compile)
+168.0 [ERROR]   Could not transfer artifact com.github.albfernandez:juniversalchardet:jar:2.4.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.commons:commons-csv:jar:1.10.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.commons:commons-csv:jar:1.10.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-webarchive-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-webarchive-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.netpreserve:jwarc:jar:0.28.3 (compile)
+168.0 [ERROR]   Could not transfer artifact org.netpreserve:jwarc:jar:0.28.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.commons:commons-compress:jar:1.24.0 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.commons:commons-compress:jar:1.24.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-xml-module:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-xml-module:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: xerces:xercesImpl:jar:2.12.2 (compile)
+168.0 [ERROR]   Could not transfer artifact xerces:xercesImpl:jar:2.12.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: xml-apis:xml-apis:jar:1.4.01 (compile)
+168.0 [ERROR]   Could not transfer artifact xml-apis:xml-apis:jar:1.4.01 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.tika:tika-parser-xmp-commons:jar:2.9.1 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.tika:tika-parser-xmp-commons:jar:2.9.1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.pdfbox:xmpbox:jar:2.0.29 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.pdfbox:xmpbox:jar:2.0.29 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.gagravarr:vorbis-java-tika:jar:0.8 (compile)
+168.0 [ERROR]   Could not transfer artifact org.gagravarr:vorbis-java-tika:jar:0.8 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.gagravarr:vorbis-java-core:jar:0.8 (compile)
+168.0 [ERROR]   Could not transfer artifact org.gagravarr:vorbis-java-core:jar:0.8 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.pdfbox:pdfbox:jar:2.0.30 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.pdfbox:pdfbox:jar:2.0.30 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apache.pdfbox:fontbox:jar:2.0.30 (compile)
+168.0 [ERROR]   Could not transfer artifact org.apache.pdfbox:fontbox:jar:2.0.30 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: commons-logging:commons-logging:jar:1.2 (compile)
+168.0 [ERROR]   Could not transfer artifact commons-logging:commons-logging:jar:1.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-starter-data-redis:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-starter-data-redis:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.lettuce:lettuce-core:jar:6.6.0.RELEASE (compile)
+168.0 [ERROR]   Could not transfer artifact io.lettuce:lettuce-core:jar:6.6.0.RELEASE from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: redis.clients.authentication:redis-authx-core:jar:0.1.1-beta2 (compile)
+168.0 [ERROR]   Could not transfer artifact redis.clients.authentication:redis-authx-core:jar:0.1.1-beta2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-common:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-common:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-handler:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-handler:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-resolver:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-resolver:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-buffer:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-buffer:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-transport-native-unix-common:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-transport-native-unix-common:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-codec:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-codec:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.netty:netty-transport:jar:4.1.130.Final (compile)
+168.0 [ERROR]   Could not transfer artifact io.netty:netty-transport:jar:4.1.130.Final from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.data:spring-data-redis:jar:3.5.7 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.data:spring-data-redis:jar:3.5.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.data:spring-data-keyvalue:jar:3.5.7 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.data:spring-data-keyvalue:jar:3.5.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.data:spring-data-commons:jar:3.5.7 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.data:spring-data-commons:jar:3.5.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-tx:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-tx:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-oxm:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-oxm:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-starter-security:jar:3.5.9 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-starter-security:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.security:spring-security-config:jar:6.5.7 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.security:spring-security-config:jar:6.5.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.security:spring-security-core:jar:6.5.7 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.security:spring-security-core:jar:6.5.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.security:spring-security-crypto:jar:6.5.7 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.security:spring-security-crypto:jar:6.5.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.security:spring-security-web:jar:6.5.7 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework.security:spring-security-web:jar:6.5.7 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.auth0:java-jwt:jar:4.5.0 (compile)
+168.0 [ERROR]   Could not transfer artifact com.auth0:java-jwt:jar:4.5.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.projectlombok:lombok:jar:1.18.32 (provided)
+168.0 [ERROR]   Could not transfer artifact org.projectlombok:lombok:jar:1.18.32 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.knuddels:jtokkit:jar:1.1.0 (compile)
+168.0 [ERROR]   Could not transfer artifact com.knuddels:jtokkit:jar:1.1.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-starter-test:jar:3.5.9 (test)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-starter-test:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-test:jar:3.5.9 (test)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-test:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework.boot:spring-boot-test-autoconfigure:jar:3.5.9 (test)
+168.0 [ERROR]   Could not transfer artifact org.springframework.boot:spring-boot-test-autoconfigure:jar:3.5.9 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.jayway.jsonpath:json-path:jar:2.9.0 (test)
+168.0 [ERROR]   Could not transfer artifact com.jayway.jsonpath:json-path:jar:2.9.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: jakarta.xml.bind:jakarta.xml.bind-api:jar:4.0.4 (compile)
+168.0 [ERROR]   Could not transfer artifact jakarta.xml.bind:jakarta.xml.bind-api:jar:4.0.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: jakarta.activation:jakarta.activation-api:jar:2.1.4 (compile)
+168.0 [ERROR]   Could not transfer artifact jakarta.activation:jakarta.activation-api:jar:2.1.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: net.minidev:json-smart:jar:2.5.2 (test)
+168.0 [ERROR]   Could not transfer artifact net.minidev:json-smart:jar:2.5.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: net.minidev:accessors-smart:jar:2.5.2 (test)
+168.0 [ERROR]   Could not transfer artifact net.minidev:accessors-smart:jar:2.5.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.assertj:assertj-core:jar:3.27.6 (test)
+168.0 [ERROR]   Could not transfer artifact org.assertj:assertj-core:jar:3.27.6 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: net.bytebuddy:byte-buddy:jar:1.17.8 (test)
+168.0 [ERROR]   Could not transfer artifact net.bytebuddy:byte-buddy:jar:1.17.8 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.awaitility:awaitility:jar:4.2.2 (test)
+168.0 [ERROR]   Could not transfer artifact org.awaitility:awaitility:jar:4.2.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.hamcrest:hamcrest:jar:3.0 (test)
+168.0 [ERROR]   Could not transfer artifact org.hamcrest:hamcrest:jar:3.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.junit.jupiter:junit-jupiter:jar:5.12.2 (test)
+168.0 [ERROR]   Could not transfer artifact org.junit.jupiter:junit-jupiter:jar:5.12.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.junit.jupiter:junit-jupiter-api:jar:5.12.2 (test)
+168.0 [ERROR]   Could not transfer artifact org.junit.jupiter:junit-jupiter-api:jar:5.12.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.opentest4j:opentest4j:jar:1.3.0 (test)
+168.0 [ERROR]   Could not transfer artifact org.opentest4j:opentest4j:jar:1.3.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.junit.platform:junit-platform-commons:jar:1.12.2 (test)
+168.0 [ERROR]   Could not transfer artifact org.junit.platform:junit-platform-commons:jar:1.12.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.apiguardian:apiguardian-api:jar:1.1.2 (test)
+168.0 [ERROR]   Could not transfer artifact org.apiguardian:apiguardian-api:jar:1.1.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.junit.jupiter:junit-jupiter-params:jar:5.12.2 (test)
+168.0 [ERROR]   Could not transfer artifact org.junit.jupiter:junit-jupiter-params:jar:5.12.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.junit.jupiter:junit-jupiter-engine:jar:5.12.2 (test)
+168.0 [ERROR]   Could not transfer artifact org.junit.jupiter:junit-jupiter-engine:jar:5.12.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.junit.platform:junit-platform-engine:jar:1.12.2 (test)
+168.0 [ERROR]   Could not transfer artifact org.junit.platform:junit-platform-engine:jar:1.12.2 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.mockito:mockito-core:jar:5.17.0 (test)
+168.0 [ERROR]   Could not transfer artifact org.mockito:mockito-core:jar:5.17.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: net.bytebuddy:byte-buddy-agent:jar:1.17.8 (test)
+168.0 [ERROR]   Could not transfer artifact net.bytebuddy:byte-buddy-agent:jar:1.17.8 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.objenesis:objenesis:jar:3.3 (test)
+168.0 [ERROR]   Could not transfer artifact org.objenesis:objenesis:jar:3.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.mockito:mockito-junit-jupiter:jar:5.17.0 (test)
+168.0 [ERROR]   Could not transfer artifact org.mockito:mockito-junit-jupiter:jar:5.17.0 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.skyscreamer:jsonassert:jar:1.5.3 (test)
+168.0 [ERROR]   Could not transfer artifact org.skyscreamer:jsonassert:jar:1.5.3 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: com.vaadin.external.google:android-json:jar:0.0.20131108.vaadin1 (test)
+168.0 [ERROR]   Could not transfer artifact com.vaadin.external.google:android-json:jar:0.0.20131108.vaadin1 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-core:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-core:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-jcl:jar:6.2.15 (compile)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-jcl:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.springframework:spring-test:jar:6.2.15 (test)
+168.0 [ERROR]   Could not transfer artifact org.springframework:spring-test:jar:6.2.15 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: org.xmlunit:xmlunit-core:jar:2.10.4 (test)
+168.0 [ERROR]   Could not transfer artifact org.xmlunit:xmlunit-core:jar:2.10.4 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR] dependency: io.projectreactor:reactor-test:jar:3.7.14 (test)
+168.0 [ERROR]   Could not transfer artifact io.projectreactor:reactor-test:jar:3.7.14 from/to mirror (https://repo.maven.apache.org/maven2): repo.maven.apache.org
+168.0 [ERROR]
+168.0 [ERROR] -> [Help 1]
+168.0 [ERROR]
+168.0 [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+168.0 [ERROR] Re-run Maven using the -X switch to enable full debug logging.
+168.0 [ERROR]
+168.0 [ERROR] For more information about the errors and possible solutions, please read the following articles:
+168.0 [ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/DependencyResolutionException
+------
+failed to solve: process "/bin/sh -c mvn -DskipTests=true -Dmaven.wagon.http.retryHandler.count=3 clean package" did not complete successfully: exit code: 1
+PS D:\Code\zlAI-v2> docker compose build --no-cache backend
+time="2026-02-25T01:09:12+08:00" level=warning msg="D:\\Code\\zlAI-v2\\docker-compose.yml: `version` is obsolete"
+2026/02/25 01:09:12 http2: server: error reading preface from client //./pipe/docker_engine: file has already been closed
+2026/02/25 01:09:12 http2: server: error reading preface from client //./pipe/docker_engine: file has already been closed
+[+] Building 524.5s (16/16) FINISHED                                                                     docker:default
+ => [backend internal] load build definition from Dockerfile                                                       0.0s
+ => => transferring dockerfile: 1.95kB                                                                             0.0s
+ => [backend internal] load metadata for dockerproxy.com/library/eclipse-temurin:21-jre                           12.4s
+ => [backend internal] load metadata for dockerproxy.com/library/maven:3.9.8-eclipse-temurin-21                   12.4s
+ => [backend internal] load .dockerignore                                                                          0.0s
+ => => transferring context: 2B                                                                                    0.0s
+ => [backend build 1/6] FROM dockerproxy.com/library/maven:3.9.8-eclipse-temurin-21@sha256:de18e4e51396ad9266f766  0.0s
+ => [backend internal] load build context                                                                          0.1s
+ => => transferring context: 24.19kB                                                                               0.1s
+ => [backend stage-1 1/4] FROM dockerproxy.com/library/eclipse-temurin:21-jre@sha256:34a58218d838035428163eb35abb  0.0s
+ => CACHED [backend build 2/6] WORKDIR /app                                                                        0.0s
+ => CACHED [backend stage-1 2/4] WORKDIR /app                                                                      0.0s
+ => [backend build 3/6] RUN mkdir -p /root/.m2 &&     printf '%s\n'     '<settings xmlns="http://maven.apache.org  0.3s
+ => [backend stage-1 3/4] RUN apt-get update &&     apt-get install -y --no-install-recommends tesseract-ocr te  156.5s
+ => [backend build 4/6] COPY pom.xml .                                                                             0.0s
+ => [backend build 5/6] COPY src ./src                                                                             0.1s
+ => [backend build 6/6] RUN mvn -DskipTests=true -Dmaven.wagon.http.retryHandler.count=3 clean package           510.8s
+ => [backend stage-1 4/4] COPY --from=build /app/target/*.jar /app/app.jar                                         0.1s
+ => [backend] exporting to image                                                                                   0.2s
+ => => exporting layers                                                                                            0.2s
+ => => writing image sha256:2b21025cba56582db20c166f796ac202cd6e8ecd6a99945104c6255ca844c690                       0.0s
+ => => naming to docker.io/library/zlai-v2-backend                                                                 0.0s
+PS D:\Code\zlAI-v2>
