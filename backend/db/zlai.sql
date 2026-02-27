@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS `account` (
     `last_password_change` DATETIME DEFAULT NULL COMMENT 'Last password change',
     `last_login_time` DATETIME DEFAULT NULL COMMENT 'Last login time',
     `last_logout_time` DATETIME DEFAULT NULL COMMENT 'Last logout time',
-    `token_balance` INT DEFAULT 10000 COMMENT 'Token balance',
+    `token_balance` INT DEFAULT 200000 COMMENT 'Token balance',
     `ocr_balance` INT DEFAULT 0 COMMENT 'OCR quota balance',
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at',

@@ -26,6 +26,7 @@ import com.harmony.backend.modules.user.service.UserSecurityService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -56,6 +57,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     private final UserSecurityService userSecurityService;
     private final ApplicationEventPublisher eventPublisher;
     private final com.harmony.backend.ai.rag.service.OcrSettingsService ocrSettingsService;
+    @Value("${app.user.default-token-balance:200000}")
+    private int defaultTokenBalance;
 
     // Redis Key
     private static final String LOGIN_FAILURE_KEY_PREFIX = "login:fail:";
@@ -114,7 +117,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                 .status("ACTIVE")
                 .deleted(false)
                 .role("USER")
-                .tokenBalance(1000)
+                .tokenBalance(defaultTokenBalance)
                 .ocrBalance(ocrSettingsService.getSettings().getDefaultUserQuota())
                 .build();
 

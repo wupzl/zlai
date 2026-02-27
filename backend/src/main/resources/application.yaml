@@ -73,6 +73,8 @@ mybatis-plus:
 
 # Application custom configuration
 app:
+  user:
+    default-token-balance: 200000
   cors:
     allowed-origin-patterns:
       - "http://localhost:*"

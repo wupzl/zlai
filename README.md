@@ -83,6 +83,16 @@ From `backend/db/seed.sql` (change passwords before production):
 - User: `test03 / 123456`
 - User: `wupzl / 123456`
 
+## 6.1 Default User Token Balance
+Newly registered users receive a default token balance configured by:
+- `app.user.default-token-balance` in `backend/src/main/resources/application.yaml`
+- Or env override: `APP_USER_DEFAULT_TOKEN_BALANCE` (recommended for Docker)
+
+Example:
+```env
+APP_USER_DEFAULT_TOKEN_BALANCE=200000
+```
+
 ## 7. Docker (Recommended for Cross-Platform)
 Copy `.env.example` to `.env` and fill your secrets. `.env` is ignored by Git.
 
