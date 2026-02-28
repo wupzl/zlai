@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <section class="panel">
     <header class="panel-header">
       <div>

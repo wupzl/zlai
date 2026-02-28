@@ -1,4 +1,4 @@
-ï»¿<template>
+<template>
   <section class="panel">
     <header class="panel-header">
       <div>
@@ -34,7 +34,7 @@
           <div>
             <div class="session-title">{{ g.name }}</div>
             <div class="session-meta">
-              {{ g.category }} Â·
+              {{ g.category }} ¡¤
               {{ g.isPublic ? "public" : (g.requestPublic ? "requested" : "private") }}
             </div>
           </div>

@@ -62,7 +62,7 @@
           <div v-for="g in mine" :key="g.gptId" class="list-item">
             <div>
               <div class="session-title">{{ g.name }}</div>
-              <div class="session-meta">{{ g.category || "General" }} ¡¤ {{ g.isPublic ? "public" : (g.requestPublic ? "requested" : "private") }}</div>
+              <div class="session-meta">{{ g.category || "General" }} - {{ g.isPublic ? "public" : (g.requestPublic ? "requested" : "private") }}</div>
             </div>
             <div class="list-actions">
               <button @click="openDetail(g)">View</button>
