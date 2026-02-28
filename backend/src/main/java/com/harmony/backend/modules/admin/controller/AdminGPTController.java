@@ -29,8 +29,9 @@ public class AdminGPTController {
     public ApiResponse<PageResult<Gpt>> listGpts(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String keyword) {
-        return ApiResponse.success(gptService.listGpts(page, size, keyword));
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Boolean requestPublic) {
+        return ApiResponse.success(gptService.listGpts(page, size, keyword, requestPublic));
     }
 
     @GetMapping("/{id}")
@@ -40,9 +41,9 @@ public class AdminGPTController {
 
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportGpts(@RequestParam(required = false) String keyword) {
-        List<Gpt> gpts = gptService.listGpts(1, 10000, keyword).getContent();
+        List<Gpt> gpts = gptService.listGpts(1, 10000, keyword, null).getContent();
         StringBuilder sb = new StringBuilder();
-        sb.append("id,gpt_id,name,category,model,user_id,is_public,usage_count,created_at,updated_at\n");
+        sb.append("id,gpt_id,name,category,model,user_id,is_public,request_public,usage_count,created_at,updated_at\n");
         for (Gpt g : gpts) {
             sb.append(csv(g.getId()))
               .append(',').append(csv(g.getGptId()))
@@ -51,6 +52,7 @@ public class AdminGPTController {
               .append(',').append(csv(g.getModel()))
               .append(',').append(csv(g.getUserId()))
               .append(',').append(csv(g.getIsPublic()))
+              .append(',').append(csv(g.getRequestPublic()))
               .append(',').append(csv(g.getUsageCount()))
               .append(',').append(csv(g.getCreatedAt()))
               .append(',').append(csv(g.getUpdatedAt()))

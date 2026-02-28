@@ -12,6 +12,10 @@
     <div class="admin-toolbar">
       <div class="filters">
         <input v-model="keyword" placeholder="Search name / category" @keyup.enter="onSearch" />
+        <label class="checkbox">
+          <input type="checkbox" v-model="requestedOnly" @change="onSearch" />
+          Requested only
+        </label>
         <select v-model.number="size" @change="onSearch">
           <option :value="10">10</option>
           <option :value="20">20</option>
@@ -26,17 +30,20 @@
     </div>
 
     <div class="card">
-      <div v-for="g in gpts" :key="g.id || g.gptId" class="list-item">
-        <div>
-          <div class="session-title">{{ g.name }}</div>
-          <div class="session-meta">{{ g.category }} - public: {{ g.isPublic }}</div>
+        <div v-for="g in gpts" :key="g.id || g.gptId" class="list-item">
+          <div>
+            <div class="session-title">{{ g.name }}</div>
+            <div class="session-meta">
+              {{ g.category }} ·
+              {{ g.isPublic ? "public" : (g.requestPublic ? "requested" : "private") }}
+            </div>
+          </div>
+          <div class="list-actions">
+            <button @click="openEdit(g)">View</button>
+            <button v-if="g.requestPublic && !g.isPublic" @click="approve(g.id)">Approve</button>
+            <button @click="remove(g.id)">Delete</button>
+          </div>
         </div>
-        <div class="list-actions">
-          <button @click="openEdit(g)">View</button>
-          <button @click="approve(g.id)">Approve</button>
-          <button @click="remove(g.id)">Delete</button>
-        </div>
-      </div>
       <div v-if="!gpts.length" class="empty">No GPTs found.</div>
     </div>
 
@@ -96,6 +103,7 @@ export default {
       edit: {},
       modelRates: {},
       keyword: "",
+      requestedOnly: false,
       page: 1,
       size: 20,
       totalPages: 1,
@@ -114,6 +122,7 @@ export default {
         query.set("page", this.page);
         query.set("size", this.size);
         if (this.keyword) query.set("keyword", this.keyword);
+        if (this.requestedOnly) query.set("requestPublic", "true");
         const data = await apiRequest(`/api/admin/gpts?${query.toString()}`);
         this.gpts = data.content || data.records || data || [];
         this.totalPages = data.totalPages || Math.max(1, Math.ceil((data.totalElements || this.gpts.length) / this.size));

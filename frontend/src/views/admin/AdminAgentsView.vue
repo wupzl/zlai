@@ -12,6 +12,10 @@
     <div class="admin-toolbar">
       <div class="filters">
         <input v-model="keyword" placeholder="Search name / model" @keyup.enter="onSearch" />
+        <label class="checkbox">
+          <input type="checkbox" v-model="requestedOnly" @change="onSearch" />
+          Requested only
+        </label>
         <select v-model.number="size" @change="onSearch">
           <option :value="10">10</option>
           <option :value="20">20</option>
@@ -29,7 +33,10 @@
       <div v-for="a in agents" :key="a.agentId" class="list-item">
         <div>
           <div class="session-title">{{ a.name }}</div>
-          <div class="session-meta">{{ a.model }} - public: {{ a.isPublic }}</div>
+          <div class="session-meta">
+            {{ a.model }} - public: {{ a.isPublic }}
+            <span v-if="a.requestPublic && !a.isPublic"> | requested</span>
+          </div>
         </div>
         <div class="list-actions">
           <button @click="openEdit(a)">View</button>
@@ -68,6 +75,10 @@
               {{ t.name }}
             </label>
           </div>
+          <label class="checkbox">
+            <input type="checkbox" v-model="edit.requestPublic" />
+            Approve public
+          </label>
           <div class="field-group">
             <div class="field-label">Team Agent IDs (comma separated)</div>
             <textarea v-model="edit.teamAgentIds" rows="2" placeholder="agent-id-1, agent-id-2"></textarea>
@@ -109,6 +120,7 @@ export default {
       tools: [],
       modelRates: {},
       keyword: "",
+      requestedOnly: false,
       page: 1,
       size: 20,
       totalPages: 1,
@@ -142,6 +154,7 @@ export default {
         query.set("page", this.page);
         query.set("size", this.size);
         if (this.keyword) query.set("keyword", this.keyword);
+        if (this.requestedOnly) query.set("requestPublic", "true");
         const data = await apiRequest(`/api/admin/agents?${query.toString()}`);
         this.agents = data.content || data.records || data || [];
         this.totalPages = data.totalPages || Math.max(1, Math.ceil((data.totalElements || this.agents.length) / this.size));
@@ -164,16 +177,17 @@ export default {
     },
     openEdit(a) {
       this.selected = a;
-      this.edit = {
-        name: a.name || "",
-        model: a.model || "",
-        description: a.description || "",
-        instructions: a.instructions || "",
-        tools: (a.tools || []).slice ? (a.tools || []) : (a.tools ? String(a.tools).split(",") : []),
-        teamAgentIds: (a.teamAgentIds || []).join ? (a.teamAgentIds || []).join(",") : (a.teamAgentIds || "")
-      };
-      this.showModal = true;
-    },
+        this.edit = {
+          name: a.name || "",
+          model: a.model || "",
+          description: a.description || "",
+          instructions: a.instructions || "",
+          tools: (a.tools || []).slice ? (a.tools || []) : (a.tools ? String(a.tools).split(",") : []),
+          teamAgentIds: (a.teamAgentIds || []).join ? (a.teamAgentIds || []).join(",") : (a.teamAgentIds || ""),
+          requestPublic: !!a.requestPublic
+        };
+        this.showModal = true;
+      },
     closeModal() {
       this.showModal = false;
     },
@@ -188,7 +202,8 @@ export default {
           tools: this.edit.tools || [],
           teamAgentIds: this.edit.teamAgentIds
             ? String(this.edit.teamAgentIds).split(",").map(t => t.trim()).filter(Boolean)
-            : []
+            : [],
+          requestPublic: !!this.edit.requestPublic
         };
         await apiRequest(`/api/admin/agents/${this.selected.agentId}`, {
           method: "PUT",

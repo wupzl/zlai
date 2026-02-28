@@ -4,24 +4,30 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.harmony.backend.common.entity.Gpt;
+import com.harmony.backend.common.entity.Message;
+import com.harmony.backend.common.entity.Session;
 import com.harmony.backend.common.exception.BusinessException;
 import com.harmony.backend.common.mapper.GPTMapper;
+import com.harmony.backend.common.mapper.MessageMapper;
+import com.harmony.backend.common.mapper.SessionMapper;
 import com.harmony.backend.common.response.PageResult;
 import com.harmony.backend.common.util.PageResultUtils;
 import com.harmony.backend.modules.gptstore.controller.request.GptUpsertRequest;
-import com.harmony.backend.modules.gptstore.service.GptModerationService;
 import com.harmony.backend.modules.gptstore.service.GptStoreService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class GptStoreServiceImpl extends ServiceImpl<GPTMapper, Gpt> implements GptStoreService {
 
-    private final GptModerationService moderationService;
+    private final SessionMapper sessionMapper;
+    private final MessageMapper messageMapper;
 
     @Override
     public PageResult<Gpt> listPublic(int page, int size, String keyword, String category) {
@@ -106,8 +112,10 @@ public class GptStoreServiceImpl extends ServiceImpl<GPTMapper, Gpt> implements 
         boolean requestPublic = Boolean.TRUE.equals(request.getRequestPublic());
         if (isAdmin) {
             gpt.setIsPublic(requestPublic);
+            gpt.setRequestPublic(false);
         } else {
-            gpt.setIsPublic(requestPublic && moderationService.shouldAutoApprove(gpt));
+            gpt.setIsPublic(false);
+            gpt.setRequestPublic(requestPublic);
         }
 
         baseMapper.insert(gpt);
@@ -126,15 +134,20 @@ public class GptStoreServiceImpl extends ServiceImpl<GPTMapper, Gpt> implements 
         if (!isAdmin && !userId.equals(gpt.getUserId())) {
             throw new BusinessException(403, "Forbidden");
         }
+        if (!isAdmin && Boolean.TRUE.equals(gpt.getIsPublic())) {
+            throw new BusinessException(403, "Public GPT can only be updated by admin");
+        }
         boolean updated = applyUpdates(gpt, request);
 
         boolean requestPublic = Boolean.TRUE.equals(request.getRequestPublic());
         if (isAdmin) {
             if (request.getRequestPublic() != null) {
                 gpt.setIsPublic(requestPublic);
+                gpt.setRequestPublic(false);
             }
-        } else if (updated || request.getRequestPublic() != null) {
-            gpt.setIsPublic(requestPublic && moderationService.shouldAutoApprove(gpt));
+        } else if (request.getRequestPublic() != null) {
+            gpt.setIsPublic(false);
+            gpt.setRequestPublic(requestPublic);
         }
 
         baseMapper.updateById(gpt);
@@ -153,10 +166,60 @@ public class GptStoreServiceImpl extends ServiceImpl<GPTMapper, Gpt> implements 
         if (!isAdmin && !userId.equals(gpt.getUserId())) {
             throw new BusinessException(403, "Forbidden");
         }
-        Gpt update = new Gpt();
-        update.setId(gpt.getId());
-        update.setIsDeleted(true);
-        return baseMapper.updateById(update) > 0;
+        if (!isAdmin && Boolean.TRUE.equals(gpt.getIsPublic())) {
+            throw new BusinessException(403, "Public GPT can only be deleted by admin");
+        }
+        int rows = baseMapper.delete(new LambdaQueryWrapper<Gpt>()
+                .eq(Gpt::getGptId, gptId));
+        boolean ok = rows > 0;
+        if (ok) {
+            baseMapper.update(
+                    null,
+                    new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Gpt>()
+                            .eq(Gpt::getGptId, gptId)
+                            .set(Gpt::getIsPublic, false)
+                            .set(Gpt::getRequestPublic, false)
+                            .set(Gpt::getUpdatedAt, LocalDateTime.now())
+            );
+        }
+        if (ok) {
+            cleanupGptSessions(gptId);
+        }
+        return ok;
+    }
+
+    private void cleanupGptSessions(String gptId) {
+        if (!StringUtils.hasText(gptId)) {
+            return;
+        }
+        List<Session> sessions = sessionMapper.selectList(new LambdaQueryWrapper<Session>()
+                .eq(Session::getGptId, gptId)
+                .eq(Session::getIsDeleted, false));
+        if (sessions == null || sessions.isEmpty()) {
+            return;
+        }
+        List<String> chatIds = sessions.stream()
+                .map(Session::getChatId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        sessionMapper.update(
+                null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Session>()
+                        .eq(Session::getGptId, gptId)
+                        .eq(Session::getIsDeleted, false)
+                        .set(Session::getIsDeleted, true)
+                        .set(Session::getUpdatedAt, LocalDateTime.now())
+        );
+        if (!chatIds.isEmpty()) {
+            messageMapper.update(
+                    null,
+                    new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Message>()
+                            .in(Message::getChatId, chatIds)
+                            .set(Message::getIsDeleted, true)
+                            .set(Message::getUpdatedAt, LocalDateTime.now())
+            );
+        }
     }
 
     private boolean applyUpdates(Gpt gpt, GptUpsertRequest request) {

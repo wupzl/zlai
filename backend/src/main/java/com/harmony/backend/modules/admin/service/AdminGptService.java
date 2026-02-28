@@ -5,7 +5,7 @@ import com.harmony.backend.common.entity.Gpt;
 import com.harmony.backend.common.response.PageResult;
 
 public interface AdminGptService extends IService<Gpt> {
-    PageResult<Gpt> listGpts(int page, int size, String keyword);
+    PageResult<Gpt> listGpts(int page, int size, String keyword, Boolean requestPublic);
 
     boolean updatePublic(Long id, boolean isPublic);
 

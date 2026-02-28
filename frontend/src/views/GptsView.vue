@@ -21,7 +21,10 @@
         <input v-model="form.avatarUrl" placeholder="Avatar URL" />
         <div class="field-group">
           <div class="field-label">Model</div>
-          <input v-model="form.model" placeholder="Model" />
+          <select v-model="form.model">
+            <option value="">Default model</option>
+            <option v-for="m in modelOptions" :key="'gpt-model-' + m" :value="m">{{ formatModelLabel(m) }}</option>
+          </select>
           <div class="hint" v-if="rateSummary">Billing rate: {{ rateSummary }}</div>
         </div>
         <div class="field-group">
@@ -59,12 +62,12 @@
           <div v-for="g in mine" :key="g.gptId" class="list-item">
             <div>
               <div class="session-title">{{ g.name }}</div>
-              <div class="session-meta">{{ g.category || "General" }} Â· {{ g.isPublic ? "public" : "private" }}</div>
+              <div class="session-meta">{{ g.category || "General" }} ¡¤ {{ g.isPublic ? "public" : (g.requestPublic ? "requested" : "private") }}</div>
             </div>
             <div class="list-actions">
               <button @click="openDetail(g)">View</button>
               <button @click="startChat(g.gptId)">Start Chat</button>
-              <button @click="removeGpt(g.gptId)">Delete</button>
+              <button v-if="!g.isPublic" @click="removeGpt(g.gptId)">Delete</button>
             </div>
           </div>
         </div>
@@ -112,7 +115,7 @@
             </span>
           </span>
         </div>
-        <div class="detail-row"><span>Visibility</span><span>{{ detail.isPublic ? "Public" : "Private" }}</span></div>
+        <div class="detail-row"><span>Visibility</span><span>{{ detail.isPublic ? "Public" : (detail.requestPublic ? "Requested" : "Private") }}</span></div>
         <div class="detail-block">
           <div class="detail-label">System Prompt</div>
           <div class="detail-content">{{ detail.instructions || "No instructions" }}</div>
@@ -139,6 +142,7 @@ export default {
       detail: null,
       status: "",
       modelRates: {},
+      modelOptions: [],
       form: {
         name: "",
         description: "",
@@ -156,6 +160,8 @@ export default {
   methods: {
     async loadAll() {
       try {
+        const models = await apiRequest("/api/chat/models/options");
+        this.modelOptions = Array.isArray(models) ? models : [];
         const pricing = await apiRequest("/api/chat/models/pricing");
         this.modelRates = this.toRateMap(pricing);
         this.mine = (await apiRequest("/api/gpts/mine?page=1&size=50")).content || [];
@@ -224,6 +230,12 @@ export default {
     },
     formatRate(rate) {
       return Number(rate).toFixed(2).replace(/\.00$/, "");
+    },
+    formatModelLabel(model) {
+      if (!model) return "Default model";
+      const rate = this.modelRates[model];
+      if (!rate) return model;
+      return `${model} (x${this.formatRate(rate.multiplier)})`;
     }
   },
   computed: {
@@ -242,3 +254,4 @@ export default {
   }
 };
 </script>
+

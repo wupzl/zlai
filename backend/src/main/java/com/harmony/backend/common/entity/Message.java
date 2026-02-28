@@ -41,6 +41,10 @@ public class Message {
     @TableField("status")
     private String status;
 
+    @TableField("is_deleted")
+    @TableLogic
+    private Boolean isDeleted;
+
     @TableField(value = "created_at", fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

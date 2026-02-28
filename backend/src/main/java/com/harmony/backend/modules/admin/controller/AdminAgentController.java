@@ -30,8 +30,9 @@ public class AdminAgentController {
     public ApiResponse<PageResult<AgentVO>> listAgents(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String keyword) {
-        return ApiResponse.success(agentService.listAll(page, size, keyword));
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Boolean requestPublic) {
+        return ApiResponse.success(agentService.listAll(page, size, keyword, requestPublic));
     }
 
     @GetMapping("/{agentId}")
@@ -42,15 +43,16 @@ public class AdminAgentController {
 
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportAgents(@RequestParam(required = false) String keyword) {
-        List<AgentVO> agents = agentService.listAll(1, 10000, keyword).getContent();
+        List<AgentVO> agents = agentService.listAll(1, 10000, keyword, null).getContent();
         StringBuilder sb = new StringBuilder();
-        sb.append("agent_id,name,model,user_id,is_public,multi_agent,tools,created_at,updated_at\n");
+        sb.append("agent_id,name,model,user_id,is_public,request_public,multi_agent,tools,created_at,updated_at\n");
         for (AgentVO a : agents) {
             sb.append(csv(a.getAgentId()))
               .append(',').append(csv(a.getName()))
               .append(',').append(csv(a.getModel()))
               .append(',').append(csv(a.getUserId()))
               .append(',').append(csv(a.getIsPublic()))
+              .append(',').append(csv(a.getRequestPublic()))
               .append(',').append(csv(a.getMultiAgent()))
               .append(',').append(csv(a.getTools()))
               .append(',').append(csv(a.getCreatedAt()))

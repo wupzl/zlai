@@ -15,7 +15,7 @@ public interface AgentService extends IService<Agent> {
 
     PageResult<AgentVO> listPublic(int page, int size, String keyword);
 
-    PageResult<AgentVO> listAll(int page, int size, String keyword);
+    PageResult<AgentVO> listAll(int page, int size, String keyword, Boolean requestPublic);
 
     AgentVO getDetail(String agentId, Long userId, boolean isAdmin);
 

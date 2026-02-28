@@ -19,6 +19,7 @@ public class AgentVO {
     private List<String> teamAgentIds;
     private List<com.harmony.backend.ai.agent.model.TeamAgentConfig> teamConfigs;
     private Boolean isPublic;
+    private Boolean requestPublic;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

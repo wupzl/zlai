@@ -44,6 +44,9 @@ public class Gpt {
     @TableField("is_public")
     private Boolean isPublic;
 
+    @TableField("request_public")
+    private Boolean requestPublic;
+
     @TableField("usage_count")
     private Integer usageCount;
 

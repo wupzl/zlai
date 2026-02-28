@@ -58,7 +58,7 @@ ON DUPLICATE KEY UPDATE
 
 /* Demo GPT */
 INSERT INTO `gpt`
-(`gpt_id`, `name`, `description`, `instructions`, `model`, `user_id`, `avatar_url`, `category`, `is_public`, `usage_count`, `is_deleted`)
+(`gpt_id`, `name`, `description`, `instructions`, `model`, `user_id`, `avatar_url`, `category`, `is_public`, `request_public`, `usage_count`, `is_deleted`)
 SELECT
     'gpt-demo-001',
     'Interview Copilot',
@@ -69,6 +69,7 @@ SELECT
     NULL,
     'interview',
     1,
+    0,
     12,
     0
 FROM `account` a

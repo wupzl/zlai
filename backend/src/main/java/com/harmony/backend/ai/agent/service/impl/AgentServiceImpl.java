@@ -11,8 +11,12 @@ import com.harmony.backend.ai.agent.model.TeamAgentConfig;
 import com.harmony.backend.ai.agent.service.AgentService;
 import com.harmony.backend.ai.tool.AgentToolRegistry;
 import com.harmony.backend.common.entity.Agent;
+import com.harmony.backend.common.entity.Message;
+import com.harmony.backend.common.entity.Session;
 import com.harmony.backend.common.exception.BusinessException;
 import com.harmony.backend.common.mapper.AgentMapper;
+import com.harmony.backend.common.mapper.MessageMapper;
+import com.harmony.backend.common.mapper.SessionMapper;
 import com.harmony.backend.common.response.PageResult;
 import com.harmony.backend.common.util.PageResultUtils;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +27,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.time.LocalDateTime;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +36,8 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
 
     private final AgentToolRegistry toolRegistry;
     private final ObjectMapper objectMapper;
+    private final SessionMapper sessionMapper;
+    private final MessageMapper messageMapper;
 
     @Override
     public List<String> validateTools(List<String> tools) {
@@ -85,10 +93,13 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
     }
 
     @Override
-    public PageResult<AgentVO> listAll(int page, int size, String keyword) {
+    public PageResult<AgentVO> listAll(int page, int size, String keyword, Boolean requestPublic) {
         Page<Agent> pageResult = new Page<>(page, size);
         LambdaQueryWrapper<Agent> query = new LambdaQueryWrapper<>();
         query.eq(Agent::getIsDeleted, false);
+        if (requestPublic != null) {
+            query.eq(Agent::getRequestPublic, requestPublic);
+        }
         if (StringUtils.hasText(keyword)) {
             query.and(q -> q.like(Agent::getName, keyword)
                     .or()
@@ -138,6 +149,7 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         agent.setTeamConfig(writeTeamConfig(teamResult.teamConfigs));
         boolean requestPublic = Boolean.TRUE.equals(request.getRequestPublic());
         agent.setIsPublic(isAdmin && requestPublic);
+        agent.setRequestPublic(!isAdmin && requestPublic);
 
         baseMapper.insert(agent);
         return toVo(agent, tools);
@@ -154,6 +166,9 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         }
         if (!isAdmin && !userId.equals(agent.getUserId())) {
             throw new BusinessException(403, "Forbidden");
+        }
+        if (!isAdmin && Boolean.TRUE.equals(agent.getIsPublic())) {
+            throw new BusinessException(403, "Public agent can only be updated by admin");
         }
         boolean updated = applyUpdates(agent, request);
         if (request.getTools() != null) {
@@ -173,9 +188,12 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
             updated = true;
         }
         if (request.getRequestPublic() != null && isAdmin) {
-            agent.setIsPublic(Boolean.TRUE.equals(request.getRequestPublic()));
+            boolean approve = Boolean.TRUE.equals(request.getRequestPublic());
+            agent.setIsPublic(approve);
+            agent.setRequestPublic(false);
         } else if (request.getRequestPublic() != null) {
             agent.setIsPublic(false);
+            agent.setRequestPublic(Boolean.TRUE.equals(request.getRequestPublic()));
         }
         if (updated) {
             baseMapper.updateById(agent);
@@ -195,10 +213,60 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         if (!isAdmin && !userId.equals(agent.getUserId())) {
             throw new BusinessException(403, "Forbidden");
         }
-        Agent update = new Agent();
-        update.setId(agent.getId());
-        update.setIsDeleted(true);
-        return baseMapper.updateById(update) > 0;
+        if (!isAdmin && Boolean.TRUE.equals(agent.getIsPublic())) {
+            throw new BusinessException(403, "Public agent can only be deleted by admin");
+        }
+        int rows = baseMapper.delete(new LambdaQueryWrapper<Agent>()
+                .eq(Agent::getAgentId, agentId));
+        boolean ok = rows > 0;
+        if (ok) {
+            baseMapper.update(
+                    null,
+                    new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Agent>()
+                            .eq(Agent::getAgentId, agentId)
+                            .set(Agent::getIsPublic, false)
+                            .set(Agent::getRequestPublic, false)
+                            .set(Agent::getUpdatedAt, LocalDateTime.now())
+            );
+        }
+        if (ok) {
+            cleanupAgentSessions(agentId);
+        }
+        return ok;
+    }
+
+    private void cleanupAgentSessions(String agentId) {
+        if (!StringUtils.hasText(agentId)) {
+            return;
+        }
+        List<Session> sessions = sessionMapper.selectList(new LambdaQueryWrapper<Session>()
+                .eq(Session::getAgentId, agentId)
+                .eq(Session::getIsDeleted, false));
+        if (sessions == null || sessions.isEmpty()) {
+            return;
+        }
+        List<String> chatIds = sessions.stream()
+                .map(Session::getChatId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        sessionMapper.update(
+                null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Session>()
+                        .eq(Session::getAgentId, agentId)
+                        .eq(Session::getIsDeleted, false)
+                        .set(Session::getIsDeleted, true)
+                        .set(Session::getUpdatedAt, LocalDateTime.now())
+        );
+        if (!chatIds.isEmpty()) {
+            messageMapper.update(
+                    null,
+                    new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Message>()
+                            .in(Message::getChatId, chatIds)
+                            .set(Message::getIsDeleted, true)
+                            .set(Message::getUpdatedAt, LocalDateTime.now())
+            );
+        }
     }
 
     private void validateRequest(AgentUpsertRequest request) {
@@ -297,6 +365,7 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         vo.setTeamAgentIds(readTeamAgents(agent.getTeamAgentIds()));
         vo.setTeamConfigs(readTeamConfig(agent.getTeamConfig()));
         vo.setIsPublic(agent.getIsPublic());
+        vo.setRequestPublic(agent.getRequestPublic());
         vo.setCreatedAt(agent.getCreatedAt());
         vo.setUpdatedAt(agent.getUpdatedAt());
         return vo;

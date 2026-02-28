@@ -92,13 +92,13 @@
             <div>
               <div class="session-title">{{ a.name }}</div>
               <div class="session-meta">
-                {{ a.model || "default model" }} · {{ a.isPublic ? "public" : "private" }} · {{ a.multiAgent ? "multi-agent" : "single-agent" }}
+                {{ a.model || "default model" }} · {{ a.isPublic ? "public" : (a.requestPublic ? "requested" : "private") }} · {{ a.multiAgent ? "multi-agent" : "single-agent" }}
               </div>
             </div>
             <div class="list-actions">
               <button @click="openDetail(a)">View</button>
               <button @click="startChat(a.agentId)">Start Chat</button>
-              <button @click="removeAgent(a.agentId)">Delete</button>
+              <button v-if="!a.isPublic" @click="removeAgent(a.agentId)">Delete</button>
             </div>
           </div>
         </div>
@@ -137,7 +137,7 @@
       <div class="detail-body">
         <div class="detail-row"><span>Model</span><span>{{ detail.model || "Default model" }}</span></div>
         <div class="detail-row"><span>Billing</span><span>Tools that call the LLM are billed separately.</span></div>
-        <div class="detail-row"><span>Visibility</span><span>{{ detail.isPublic ? "Public" : "Private" }}</span></div>
+        <div class="detail-row"><span>Visibility</span><span>{{ detail.isPublic ? "Public" : (detail.requestPublic ? "Requested" : "Private") }}</span></div>
         <div class="detail-row"><span>Mode</span><span>{{ detail.multiAgent ? "Multi-agent" : "Single-agent" }}</span></div>
         <div class="detail-block" v-if="detail.teamAgentIds && detail.teamAgentIds.length">
           <div class="detail-label">Team Agents</div>

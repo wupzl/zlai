@@ -58,6 +58,9 @@ public class Agent {
     @TableField("is_public")
     private Boolean isPublic;
 
+    @TableField("request_public")
+    private Boolean requestPublic;
+
     @TableField(value = "created_at", fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 
