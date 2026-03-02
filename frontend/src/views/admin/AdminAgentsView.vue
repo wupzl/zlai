@@ -79,6 +79,9 @@
             <input type="checkbox" v-model="edit.requestPublic" />
             Approve public
           </label>
+          <div class="hint" v-if="selected.multiAgent && edit.requestPublic">
+            Public multi-agent requires all team agents to be public.
+          </div>
           <div class="field-group">
             <div class="field-label">Team Agent IDs (comma separated)</div>
             <textarea v-model="edit.teamAgentIds" rows="2" placeholder="agent-id-1, agent-id-2"></textarea>
@@ -194,17 +197,25 @@ export default {
     async saveAgent() {
       if (!this.selected) return;
       try {
+        const teamAgentIds = this.edit.teamAgentIds
+          ? String(this.edit.teamAgentIds).split(",").map(t => t.trim()).filter(Boolean)
+          : [];
         const body = {
           name: this.edit.name,
           model: this.edit.model,
           description: this.edit.description,
           instructions: this.normalizeInstructions(this.edit.instructions || ""),
           tools: this.edit.tools || [],
-          teamAgentIds: this.edit.teamAgentIds
-            ? String(this.edit.teamAgentIds).split(",").map(t => t.trim()).filter(Boolean)
-            : [],
+          teamAgentIds,
           requestPublic: !!this.edit.requestPublic
         };
+        if (this.selected.multiAgent && body.requestPublic && teamAgentIds.length) {
+          const privateTeamIds = await this.findNonPublicTeamAgents(teamAgentIds);
+          if (privateTeamIds.length) {
+            this.status = `Public multi-agent requires public team agents. Non-public: ${privateTeamIds.join(", ")}`;
+            return;
+          }
+        }
         await apiRequest(`/api/admin/agents/${this.selected.agentId}`, {
           method: "PUT",
           body: JSON.stringify(body)
@@ -229,6 +240,24 @@ export default {
         .split(/\n-{3,}\n/)
         .map(p => p.trim())
         .filter(Boolean);
+    },
+    async findNonPublicTeamAgents(teamAgentIds) {
+      const ids = Array.isArray(teamAgentIds) ? teamAgentIds : [];
+      const nonPublic = [];
+      for (const id of ids) {
+        try {
+          let agent = this.agents.find((a) => a.agentId === id);
+          if (!agent) {
+            agent = await apiRequest(`/api/admin/agents/${id}`);
+          }
+          if (!agent || !agent.isPublic) {
+            nonPublic.push(id);
+          }
+        } catch (e) {
+          nonPublic.push(id);
+        }
+      }
+      return nonPublic;
     },
     async remove(agentId) {
       try {

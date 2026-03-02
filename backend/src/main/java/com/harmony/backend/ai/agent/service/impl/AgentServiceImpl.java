@@ -134,7 +134,14 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         }
         validateRequest(request);
         List<String> tools = validateTools(request.getTools());
-        TeamValidationResult teamResult = validateTeamAgents(request.getTeamConfigs(), request.getTeamAgentIds(), userId, isAdmin);
+        boolean requestPublic = Boolean.TRUE.equals(request.getRequestPublic());
+        TeamVisibilityRequirement requirement = resolveTeamVisibilityRequirement(
+                Boolean.TRUE.equals(request.getMultiAgent()),
+                isAdmin && requestPublic,
+                !isAdmin && requestPublic
+        );
+        TeamValidationResult teamResult = validateTeamAgents(
+                request.getTeamConfigs(), request.getTeamAgentIds(), userId, isAdmin, requirement);
         Agent agent = new Agent();
         agent.setAgentId(UUID.randomUUID().toString());
         agent.setName(request.getName().trim());
@@ -147,7 +154,6 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         agent.setMultiAgent(Boolean.TRUE.equals(request.getMultiAgent()));
         agent.setTeamAgentIds(writeTeamAgents(teamResult.teamIds));
         agent.setTeamConfig(writeTeamConfig(teamResult.teamConfigs));
-        boolean requestPublic = Boolean.TRUE.equals(request.getRequestPublic());
         agent.setIsPublic(isAdmin && requestPublic);
         agent.setRequestPublic(!isAdmin && requestPublic);
 
@@ -170,6 +176,23 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         if (!isAdmin && Boolean.TRUE.equals(agent.getIsPublic())) {
             throw new BusinessException(403, "Public agent can only be updated by admin");
         }
+        boolean finalMultiAgent = request.getMultiAgent() != null
+                ? Boolean.TRUE.equals(request.getMultiAgent())
+                : Boolean.TRUE.equals(agent.getMultiAgent());
+        boolean finalIsPublic = Boolean.TRUE.equals(agent.getIsPublic());
+        boolean finalRequestPublic = Boolean.TRUE.equals(agent.getRequestPublic());
+        if (request.getRequestPublic() != null) {
+            if (isAdmin) {
+                finalIsPublic = Boolean.TRUE.equals(request.getRequestPublic());
+                finalRequestPublic = false;
+            } else {
+                finalIsPublic = false;
+                finalRequestPublic = Boolean.TRUE.equals(request.getRequestPublic());
+            }
+        }
+        TeamVisibilityRequirement requirement = resolveTeamVisibilityRequirement(
+                finalMultiAgent, finalIsPublic, finalRequestPublic);
+
         boolean updated = applyUpdates(agent, request);
         if (request.getTools() != null) {
             List<String> tools = validateTools(request.getTools());
@@ -177,10 +200,15 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
             updated = true;
         }
         if (request.getTeamAgentIds() != null || request.getTeamConfigs() != null) {
-            TeamValidationResult teamResult = validateTeamAgents(request.getTeamConfigs(), request.getTeamAgentIds(), userId, isAdmin);
+            TeamValidationResult teamResult = validateTeamAgents(
+                    request.getTeamConfigs(), request.getTeamAgentIds(), userId, isAdmin, requirement);
             agent.setTeamAgentIds(writeTeamAgents(teamResult.teamIds));
             agent.setTeamConfig(writeTeamConfig(teamResult.teamConfigs));
             updated = true;
+        } else if (requirement != TeamVisibilityRequirement.ACCESSIBLE_ONLY) {
+            // Changing visibility without changing team still requires team visibility constraints.
+            validateTeamAgents(readTeamConfig(agent.getTeamConfig()), readTeamAgents(agent.getTeamAgentIds()),
+                    userId, isAdmin, requirement);
         }
         if (request.getMultiAgent() != null && !Boolean.TRUE.equals(request.getMultiAgent())) {
             agent.setTeamAgentIds(writeTeamAgents(List.of()));
@@ -393,7 +421,8 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
     private TeamValidationResult validateTeamAgents(List<TeamAgentConfig> configs,
                                                     List<String> teamAgentIds,
                                                     Long userId,
-                                                    boolean isAdmin) {
+                                                    boolean isAdmin,
+                                                    TeamVisibilityRequirement requirement) {
         List<String> normalized;
         List<TeamAgentConfig> normalizedConfigs = new ArrayList<>();
         if (configs != null && !configs.isEmpty()) {
@@ -435,17 +464,63 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         }
         for (Agent agent : agents) {
             if (Boolean.TRUE.equals(agent.getIsPublic())) {
+                ensureVisibilityRequirement(agent, requirement, userId);
                 continue;
             }
             if (isAdmin) {
+                ensureVisibilityRequirement(agent, requirement, userId);
                 continue;
             }
             if (userId != null && userId.equals(agent.getUserId())) {
+                ensureVisibilityRequirement(agent, requirement, userId);
                 continue;
             }
             throw new BusinessException(403, "Team agent not accessible: " + agent.getAgentId());
         }
         return new TeamValidationResult(normalized, normalizedConfigs);
+    }
+
+    private void ensureVisibilityRequirement(Agent agent,
+                                             TeamVisibilityRequirement requirement,
+                                             Long requesterUserId) {
+        if (requirement == null || requirement == TeamVisibilityRequirement.ACCESSIBLE_ONLY) {
+            return;
+        }
+        if (requirement == TeamVisibilityRequirement.PUBLIC_ONLY) {
+            if (!Boolean.TRUE.equals(agent.getIsPublic())) {
+                throw new BusinessException(400,
+                        "Public multi-agent requires all team agents to be public: " + agent.getAgentId());
+            }
+            return;
+        }
+        if (requirement == TeamVisibilityRequirement.PUBLIC_OR_REQUESTED_OWNED) {
+            if (Boolean.TRUE.equals(agent.getIsPublic())) {
+                return;
+            }
+            boolean requestedOwned = Boolean.TRUE.equals(agent.getRequestPublic())
+                    && requesterUserId != null
+                    && requesterUserId.equals(agent.getUserId());
+            if (!requestedOwned) {
+                throw new BusinessException(400,
+                        "Requested public multi-agent requires team agents to be public or requested by owner: "
+                                + agent.getAgentId());
+            }
+        }
+    }
+
+    private TeamVisibilityRequirement resolveTeamVisibilityRequirement(boolean multiAgent,
+                                                                       boolean finalIsPublic,
+                                                                       boolean finalRequestPublic) {
+        if (!multiAgent) {
+            return TeamVisibilityRequirement.ACCESSIBLE_ONLY;
+        }
+        if (finalIsPublic) {
+            return TeamVisibilityRequirement.PUBLIC_ONLY;
+        }
+        if (finalRequestPublic) {
+            return TeamVisibilityRequirement.PUBLIC_OR_REQUESTED_OWNED;
+        }
+        return TeamVisibilityRequirement.ACCESSIBLE_ONLY;
     }
 
     private String writeTeamAgents(List<String> teamAgentIds) {
@@ -494,5 +569,11 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
             this.teamIds = teamIds;
             this.teamConfigs = teamConfigs;
         }
+    }
+
+    private enum TeamVisibilityRequirement {
+        ACCESSIBLE_ONLY,
+        PUBLIC_ONLY,
+        PUBLIC_OR_REQUESTED_OWNED
     }
 }

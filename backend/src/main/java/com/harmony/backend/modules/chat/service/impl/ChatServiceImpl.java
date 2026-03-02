@@ -128,12 +128,6 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         if (multiAgentEnabled) {
             log.info("Multi-agent enabled: managerAgentId={}", sessionAgent != null ? sessionAgent.getAgentId() : null);
         }
-        if (multiAgentEnabled) {
-            log.info("Multi-agent enabled: managerAgentId={}", sessionAgent != null ? sessionAgent.getAgentId() : null);
-        }
-        if (multiAgentEnabled) {
-            log.info("Multi-agent enabled: managerAgentId={}", sessionAgent != null ? sessionAgent.getAgentId() : null);
-        }
         String userMessageId = messageId != null && !messageId.isBlank()
                 ? messageId
                 : UUID.randomUUID().toString();
@@ -189,21 +183,9 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         MultiAgentOrchestrator.ToolUsageRecorder usageRecorder = null;
         if (multiAgentEnabled) {
             List<TeamAgentRuntime> teamAgents = resolveTeamAgents(sessionAgent, userId);
-            if (multiAgentEnabled) {
-                log.info("Resolved team agents: count={}, ids={}",
-                        teamAgents.size(),
-                        teamAgents.stream().map(a -> a.getAgent() != null ? a.getAgent().getAgentId() : "null").toList());
-            }
-            if (multiAgentEnabled) {
-                log.info("Resolved team agents: count={}, ids={}",
-                        teamAgents.size(),
-                        teamAgents.stream().map(a -> a.getAgent() != null ? a.getAgent().getAgentId() : "null").toList());
-            }
-            if (multiAgentEnabled) {
-                log.info("Resolved team agents: count={}, ids={}",
-                        teamAgents.size(),
-                        teamAgents.stream().map(a -> a.getAgent() != null ? a.getAgent().getAgentId() : "null").toList());
-            }
+            log.info("Resolved team agents: count={}, ids={}",
+                    teamAgents.size(),
+                    teamAgents.stream().map(a -> a.getAgent() != null ? a.getAgent().getAgentId() : "null").toList());
             if (!teamAgents.isEmpty()) {
                 usageRecorder = (toolModelName, pTokens, cTokens) ->
                         recordToolConsumption(session, assistantMessageId, toolModelName, pTokens, cTokens);
@@ -964,8 +946,15 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                     allowed.add(buildRuntime(agent, configs));
                 }
             }
+            if (allowed.size() < ids.size()) {
+                log.warn("Some team agents are filtered by permission or missing. managerAgentId={}, requestedIds={}, resolvedIds={}, requesterUserId={}",
+                        manager.getAgentId(), ids, allowed.stream()
+                                .map(a -> a.getAgent() != null ? a.getAgent().getAgentId() : "null").toList(), userId);
+            }
             return allowed;
         } catch (Exception e) {
+            log.warn("Resolve team agents failed. managerAgentId={}, requesterUserId={}, error={}",
+                    manager.getAgentId(), userId, e.getMessage());
             return List.of();
         }
     }

@@ -55,10 +55,18 @@
         <div class="field-group" v-if="form.multiAgent">
           <div class="field-label">Team Agents (select multiple)</div>
           <div class="hint">Team agents inherit their own tool settings. You only assign roles here.</div>
+          <div class="hint" v-if="form.requestPublic">
+            When requesting public, each team agent must be public, or your own agent that also requested public.
+          </div>
           <div class="tool-list">
-            <label v-for="a in mine" :key="a.agentId">
-              <input type="checkbox" :value="a.agentId" v-model="form.teamAgentIds" />
-              {{ a.name }}
+            <label v-for="a in teamCandidates" :key="a.agentId">
+              <input
+                type="checkbox"
+                :value="a.agentId"
+                v-model="form.teamAgentIds"
+                :disabled="form.requestPublic && !isAgentPublishReady(a.agentId)"
+              />
+              {{ a.name }} ({{ teamVisibilityLabel(a) }})
             </label>
           </div>
           <div class="card" v-if="form.teamAgentIds.length">
@@ -229,6 +237,13 @@ export default {
     },
     async createAgent() {
       try {
+        if (this.form.multiAgent && this.form.requestPublic) {
+          const nonPublishReadyTeam = this.form.teamAgentIds.filter((id) => !this.isAgentPublishReady(id));
+          if (nonPublishReadyTeam.length) {
+            this.status = `When requesting public, team agents must be public or your own requested-public agents. Invalid: ${nonPublishReadyTeam.join(", ")}`;
+            return;
+          }
+        }
         const teamConfigs = this.form.multiAgent
           ? this.form.teamAgentIds.map((id) => ({
               agentId: id,
@@ -281,16 +296,37 @@ export default {
       this.$router.push(`/app/agent/${agentId}/chat`);
     },
     agentName(agentId) {
-      const match = this.mine.find((a) => a.agentId === agentId);
+      const match = this.findAgentById(agentId);
       return match ? match.name : agentId;
     },
     toolsForAgent(agentId) {
-      const match = this.mine.find((a) => a.agentId === agentId) || this.publicAgents.find((a) => a.agentId === agentId);
+      const match = this.findAgentById(agentId);
       const tools = (match && match.tools) ? match.tools : [];
       if (Array.isArray(tools) && tools.length) {
         return tools.join(", ");
       }
       return "No tools";
+    },
+    findAgentById(agentId) {
+      return this.teamCandidates.find((a) => a.agentId === agentId)
+        || this.mine.find((a) => a.agentId === agentId)
+        || this.publicAgents.find((a) => a.agentId === agentId)
+        || null;
+    },
+    isMineAgent(agentId) {
+      return this.mine.some((a) => a.agentId === agentId);
+    },
+    isAgentPublishReady(agentId) {
+      const match = this.findAgentById(agentId);
+      if (!match) return false;
+      if (match.isPublic) return true;
+      return this.isMineAgent(agentId) && !!match.requestPublic;
+    },
+    teamVisibilityLabel(agent) {
+      if (!agent) return "private";
+      if (agent.isPublic) return "public";
+      if (this.isMineAgent(agent.agentId) && agent.requestPublic) return "requested";
+      return "private";
     },
     toRateMap(pricing) {
       if (!Array.isArray(pricing)) return {};
@@ -310,6 +346,18 @@ export default {
       const shown = Number(info.multiplier).toFixed(2).replace(/\.00$/, "");
       const stamp = info.updatedAt ? `, ${String(info.updatedAt).slice(0, 10)}` : "";
       return `${model} (x${shown}${stamp})`;
+    }
+  },
+  computed: {
+    teamCandidates() {
+      const merged = new Map();
+      (this.publicAgents || []).forEach((a) => {
+        if (a && a.agentId) merged.set(a.agentId, a);
+      });
+      (this.mine || []).forEach((a) => {
+        if (a && a.agentId) merged.set(a.agentId, a);
+      });
+      return Array.from(merged.values());
     }
   },
   watch: {
