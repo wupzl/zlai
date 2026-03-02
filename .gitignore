@@ -35,12 +35,25 @@ build/
 # Local env files (do not commit)
 .env
 .env.properties
-test/backend_app.jar
-test/backend_app.jar
+
+# Build outputs
 backend/target/
 frontend/dist/
+build/
+
+# Local artifacts
+.aiexclude
+docs/
 *.jar
+*.log
+*.tmp
+*.bak
+*.zip
+*.7z
+*.tar
+*.gz
+*.rar
+
+# Test artifacts
 test/backend_app.jar
 test/jarcheck/
-backend/target/
-frontend/dist/
