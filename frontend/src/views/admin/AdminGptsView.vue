@@ -34,7 +34,7 @@
           <div>
             <div class="session-title">{{ g.name }}</div>
             <div class="session-meta">
-              {{ g.category }} ¡¤
+              {{ g.category || "uncategorized" }} |
               {{ g.isPublic ? "public" : (g.requestPublic ? "requested" : "private") }}
             </div>
           </div>
@@ -260,4 +260,5 @@ export default {
   }
 };
 </script>
+
 
