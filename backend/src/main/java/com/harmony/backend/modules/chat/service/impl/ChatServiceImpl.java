@@ -125,6 +125,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         String mergedPrompt = mergeSystemPrompt(systemPrompt, ragContext);
         Agent sessionAgent = resolveAgentEntity(session);
         boolean multiAgentEnabled = isMultiAgentEnabled(sessionAgent);
+        boolean bufferToolStream = shouldBufferToolStream(sessionAgent);
         if (multiAgentEnabled) {
             log.info("Multi-agent enabled: managerAgentId={}", sessionAgent != null ? sessionAgent.getAgentId() : null);
         }
@@ -209,7 +210,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                         if (!toolCallDetected.get() && isLikelyToolCall(current)) {
                             toolCallDetected.set(true);
                         }
-                        if (!toolSuspected.get() && !toolCallDetected.get()) {
+                        if (!bufferToolStream && !toolSuspected.get() && !toolCallDetected.get()) {
                             sink.next(chunk);
                         }
                     },
@@ -220,12 +221,8 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                                     ToolHandlingResult handled = handleToolCallIfNeeded(session, messages, assistantContent,
                                             finalModel, assistantMessageId);
                                     String finalContent = handled.content != null ? handled.content : assistantContent;
-                                    if (toolSuspected.get() || toolCallDetected.get()) {
-                                        if (handled.usedTool) {
-                                            sink.next(finalContent);
-                                        } else {
-                                            sink.next(finalContent);
-                                        }
+                                    if (bufferToolStream || toolSuspected.get() || toolCallDetected.get()) {
+                                        emitChunked(sink, finalContent);
                                     }
                                     int completionTokens = estimateCompletionTokens(finalContent);
                                     Message assistantMessage = Message.builder()
@@ -297,6 +294,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         String mergedPrompt = mergeSystemPrompt(systemPrompt, ragContext);
         Agent sessionAgent = resolveAgentEntity(session);
         boolean multiAgentEnabled = isMultiAgentEnabled(sessionAgent);
+        boolean bufferToolStream = shouldBufferToolStream(sessionAgent);
 
         int promptTokens = estimatePromptTokens(prompt);
         double multiplier = billingProperties.getMultiplier(finalModel);
@@ -359,7 +357,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                         if (!toolCallDetected.get() && isLikelyToolCall(current)) {
                             toolCallDetected.set(true);
                         }
-                        if (!toolSuspected.get() && !toolCallDetected.get()) {
+                        if (!bufferToolStream && !toolSuspected.get() && !toolCallDetected.get()) {
                             sink.next(chunk);
                         }
                     },
@@ -370,12 +368,8 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                                     ToolHandlingResult handled = handleToolCallIfNeeded(session, messages, assistantContent,
                                             finalModel, newAssistantMessageId);
                                     String finalContent = handled.content != null ? handled.content : assistantContent;
-                                    if (toolSuspected.get() || toolCallDetected.get()) {
-                                        if (handled.usedTool) {
-                                            sink.next(finalContent);
-                                        } else {
-                                            sink.next(finalContent);
-                                        }
+                                    if (bufferToolStream || toolSuspected.get() || toolCallDetected.get()) {
+                                        emitChunked(sink, finalContent);
                                     }
                                     int completionTokens = estimateCompletionTokens(finalContent);
                                     Message assistantMessage = Message.builder()
@@ -1110,18 +1104,6 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         return useRag == null || Boolean.TRUE.equals(useRag);
     }
 
-    private String ragNoContextMessage() {
-        return "根据知识库上下文未检索到相关内容，无法回答该问题。请尝试调整问题或补充资料。";
-    }
-
-    private String ragNoContextMessageV2() {
-        return "根据知识库上下文未检索到相关内容，无法回答该问题。请尝试调整问题或补充资料。";
-    }
-
-    private String ragNoContextMessageV3() {
-        return "根据知识库上下文未检索到相关内容，无法回答该问题。请尝试调整问题或补充资料。";
-    }
-
     private String ragNoContextMessageV4() {
         return "No relevant context found in the knowledge base. Please refine your question or add documents.";
     }
@@ -1223,10 +1205,20 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         }
         log.info("Tool success: toolKey={}, outputSize={}", toolKey,
                 result.getOutput() == null ? 0 : result.getOutput().length());
+        boolean useChinese = preferChinese(userPrompt);
+        String prefix = extractNonToolPrefix(assistantContent);
         List<LlmMessage> followup = new ArrayList<>(messages);
         followup.add(new LlmMessage("assistant", assistantContent));
+        String followupInstruction = useChinese
+                ? "工具已返回结果。请基于结果直接回答用户，使用中文。不要返回 JSON，不要再调用工具。"
+                : "Tool result is ready. Provide the final answer in plain text based on the result. Do not return JSON and do not call any tool.";
+        if (prefix != null && !prefix.isBlank()) {
+            followupInstruction += useChinese
+                    ? ("\n请保留并放在开头的前缀句：" + prefix)
+                    : ("\nKeep this exact opening sentence at the beginning: " + prefix);
+        }
         followup.add(new LlmMessage("user", "Tool result:\n" + result.getOutput()
-                + "\n\nPlease provide the final answer to the user based on this result."));
+                + "\n\n" + followupInstruction));
         try {
             LlmAdapter adapter = adapterRegistry.getAdapter(model);
             String followupAnswer = adapter.chat(followup, model);
@@ -1254,12 +1246,20 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                                                   String model,
                                                   String toolOutput) {
         try {
+            String userPrompt = extractLastUserPrompt(messages);
+            boolean useChinese = preferChinese(userPrompt);
+            String prefix = extractNonToolPrefix(assistantContent);
             List<LlmMessage> strictFollowup = new ArrayList<>(messages);
             strictFollowup.add(new LlmMessage("assistant", assistantContent));
             strictFollowup.add(new LlmMessage("user",
                     "Tool result:\n" + toolOutput
-                            + "\n\nReturn the final answer directly in plain text. "
-                            + "Do NOT call any tool. Do NOT return JSON."));
+                            + (useChinese
+                            ? "\n\n请直接返回最终答案（中文纯文本），不要调用任何工具，不要返回 JSON。"
+                            : "\n\nReturn the final answer directly in plain text, do not call any tool, and do not return JSON.")
+                            + ((prefix != null && !prefix.isBlank())
+                            ? (useChinese ? ("\n请保留并放在开头的前缀句：" + prefix)
+                            : ("\nKeep this exact opening sentence at the beginning: " + prefix))
+                            : "")));
             LlmAdapter adapter = adapterRegistry.getAdapter(model);
             return adapter.chat(strictFollowup, model);
         } catch (Exception e) {
@@ -1564,11 +1564,12 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
 
     private ToolCall parseToolCall(String content) {
         String trimmed = normalizeToolCallJson(content);
-        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+        String candidate = extractToolJsonCandidate(trimmed);
+        if (candidate == null || candidate.isBlank()) {
             return null;
         }
         try {
-            Map<String, Object> map = objectMapper.readValue(trimmed, new TypeReference<Map<String, Object>>() {});
+            Map<String, Object> map = objectMapper.readValue(candidate, new TypeReference<Map<String, Object>>() {});
             Object toolObj = map.get("tool");
             String tool = toolObj == null ? null : toolObj.toString();
             Object inputObj = map.get("input");
@@ -1606,11 +1607,109 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         if (content == null) {
             return false;
         }
+        String trimmed = normalizeToolCallJson(content);
+        if (trimmed.startsWith("{") && (trimmed.contains("\"tool\"") || trimmed.contains("\"input\""))) {
+            return true;
+        }
+        return extractToolJsonCandidate(trimmed) != null;
+    }
+
+    private String extractToolJsonCandidate(String content) {
+        if (content == null || content.isBlank()) {
+            return null;
+        }
         String trimmed = content.trim();
-        if (!trimmed.startsWith("{")) {
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            return trimmed;
+        }
+        int start = trimmed.indexOf('{');
+        while (start >= 0) {
+            int depth = 0;
+            boolean inString = false;
+            boolean escaped = false;
+            for (int i = start; i < trimmed.length(); i++) {
+                char c = trimmed.charAt(i);
+                if (escaped) {
+                    escaped = false;
+                    continue;
+                }
+                if (c == '\\') {
+                    escaped = true;
+                    continue;
+                }
+                if (c == '"') {
+                    inString = !inString;
+                    continue;
+                }
+                if (inString) {
+                    continue;
+                }
+                if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0) {
+                        String candidate = trimmed.substring(start, i + 1).trim();
+                        if (candidate.contains("\"tool\"")) {
+                            return candidate;
+                        }
+                        break;
+                    }
+                }
+            }
+            start = trimmed.indexOf('{', start + 1);
+        }
+        return null;
+    }
+
+    private String extractNonToolPrefix(String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        String normalized = normalizeToolCallJson(content);
+        String candidate = extractToolJsonCandidate(normalized);
+        if (candidate == null || candidate.isBlank()) {
+            return normalized.trim();
+        }
+        int idx = normalized.indexOf(candidate);
+        if (idx <= 0) {
+            return "";
+        }
+        return normalized.substring(0, idx).trim();
+    }
+
+    private boolean preferChinese(String text) {
+        if (text == null || text.isBlank()) {
             return false;
         }
-        return trimmed.contains("\"tool\"") || trimmed.contains("\"input\"");
+        for (int i = 0; i < text.length(); i++) {
+            Character.UnicodeBlock block = Character.UnicodeBlock.of(text.charAt(i));
+            if (block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                    || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                    || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
+                    || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean shouldBufferToolStream(Agent sessionAgent) {
+        if (sessionAgent == null) {
+            return false;
+        }
+        List<String> tools = readAgentTools(sessionAgent);
+        return tools != null && !tools.isEmpty();
+    }
+
+    private void emitChunked(reactor.core.publisher.FluxSink<String> sink, String text) {
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        int chunkSize = 120;
+        for (int i = 0; i < text.length(); i += chunkSize) {
+            sink.next(text.substring(i, Math.min(text.length(), i + chunkSize)));
+        }
     }
 
     private static class ToolCall {
