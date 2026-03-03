@@ -23,3 +23,7 @@ CREATE TABLE IF NOT EXISTS rag_chunk (
 
 CREATE INDEX IF NOT EXISTS idx_rag_chunk_user ON rag_chunk(user_id);
 CREATE INDEX IF NOT EXISTS idx_rag_chunk_doc ON rag_chunk(doc_id);
+-- Vector ANN index for pgvector (<-> L2 distance in current query)
+CREATE INDEX IF NOT EXISTS idx_rag_chunk_embedding_hnsw_l2
+ON rag_chunk
+USING hnsw (embedding vector_l2_ops);
