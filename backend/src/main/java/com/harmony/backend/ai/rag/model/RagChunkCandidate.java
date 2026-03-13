@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class RagChunkCandidate {
+    private Long id;
     private String docId;
     private String content;
     private float[] embedding;

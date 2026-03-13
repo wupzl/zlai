@@ -1,6 +1,9 @@
 package com.harmony.backend.modules.user.controller;
 
 import com.harmony.backend.modules.user.controller.response.TokenResponse;
+import com.harmony.backend.common.config.AppCorsProperties;
+import com.harmony.backend.common.filter.GlobalRateLimitFilter;
+import com.harmony.backend.common.filter.JwtAuthenticationFilter;
 import com.harmony.backend.modules.user.service.IUserService;
 import com.harmony.backend.modules.user.service.UserSecurityService;
 import com.harmony.backend.common.util.JwtUtil;
@@ -10,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -35,6 +39,14 @@ class UserControllerTest {
     private UserMapper userMapper;
     @MockBean
     private UserSecurityService userSecurityService;
+    @MockBean
+    private AppCorsProperties appCorsProperties;
+    @MockBean
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
+    @MockBean
+    private GlobalRateLimitFilter globalRateLimitFilter;
+    @MockBean(name = "webMvcTaskExecutor")
+    private AsyncTaskExecutor webMvcTaskExecutor;
 
     @Test
     void refresh_returnsNewAccessToken() throws Exception {
@@ -67,5 +79,14 @@ class UserControllerTest {
                         .content("{\"refreshToken\":\"bad\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Refresh token invalid or expired")));
+    }
+
+    @Test
+    void logout_withoutRefreshToken_returnsFalse() throws Exception {
+        mockMvc.perform(post("/api/user/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"data\":false")));
     }
 }

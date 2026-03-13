@@ -74,7 +74,7 @@ services:
       APP_TOOLS_SEARCH_BOCHA_ENDPOINT: ${BOCHA_ENDPOINT:-https://api.bocha.cn/v1/web-search}
       APP_TOOLS_SEARCH_BAIDU_ENABLED: ${BAIDU_ENABLED:-true}
       APP_JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-me}
-      APP_JWT_REFRESHSECRET: ${JWT_REFRESH_SECRET:-change-me}
+      APP_JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me}
     ports:
       - "8080:8080"
 

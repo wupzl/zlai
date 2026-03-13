@@ -9,7 +9,7 @@ public interface AdminUserService extends IService<User> {
 
     boolean updateStatus(Long id, String status);
 
-    boolean updateBalance(Long id, int delta);
+    boolean updateBalance(Long id, long delta);
 
     boolean resetPassword(Long id, String newPassword);
 

@@ -10,13 +10,16 @@ import com.harmony.backend.ai.rag.service.OcrService;
 import com.harmony.backend.ai.rag.service.RagService;
 import com.harmony.backend.common.exception.BusinessException;
 import com.harmony.backend.common.response.PageResult;
+import com.harmony.backend.common.util.TokenCounter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -32,6 +35,7 @@ import java.util.regex.Pattern;
 public class RagServiceImpl implements RagService {
     private static final Pattern MARKDOWN_IMAGE_PATTERN =
             Pattern.compile("!\\[[^\\]]*\\]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\)");
+    private static final Pattern PARAGRAPH_SPLIT_PATTERN = Pattern.compile("\\n\\s*\\n+");
 
     private final RagRepository ragRepository;
     private final EmbeddingService embeddingService;
@@ -39,6 +43,7 @@ public class RagServiceImpl implements RagService {
     private final OcrService ocrService;
 
     @Override
+    @Transactional(transactionManager = "ragTransactionManager", rollbackFor = Exception.class)
     public String ingest(Long userId, String title, String content) {
         if (userId == null) {
             throw new BusinessException(401, "Unauthorized");
@@ -48,7 +53,7 @@ public class RagServiceImpl implements RagService {
         }
         String safeTitle = StringUtils.hasText(title) ? title.trim() : "Untitled";
         String docId = ragRepository.createDocument(userId, safeTitle, content);
-        List<String> chunks = splitContent(content, properties.getChunkSize(), properties.getChunkOverlap());
+        List<String> chunks = splitContent(content);
         for (String chunk : chunks) {
             float[] embedding = embeddingService.embed(chunk);
             ragRepository.insertChunk(docId, userId, chunk, embedding);
@@ -57,6 +62,7 @@ public class RagServiceImpl implements RagService {
     }
 
     @Override
+    @Transactional(transactionManager = "ragTransactionManager", rollbackFor = Exception.class)
     public String ingestMarkdown(Long userId, String title, String markdownContent, String sourcePath) {
         if (userId == null) {
             throw new BusinessException(401, "Unauthorized");
@@ -70,6 +76,7 @@ public class RagServiceImpl implements RagService {
     }
 
     @Override
+    @Transactional(transactionManager = "ragTransactionManager", rollbackFor = Exception.class)
     public String ingestMarkdownWithImages(Long userId, String title, String markdownContent,
                                            java.util.Map<String, byte[]> images) {
         if (userId == null) {
@@ -177,6 +184,7 @@ public class RagServiceImpl implements RagService {
     }
 
     @Override
+    @Transactional(transactionManager = "ragTransactionManager", rollbackFor = Exception.class)
     public boolean deleteDocument(Long userId, String docId) {
         if (userId == null) {
             throw new BusinessException(401, "Unauthorized");
@@ -188,6 +196,7 @@ public class RagServiceImpl implements RagService {
     }
 
     @Override
+    @Transactional(transactionManager = "ragTransactionManager", rollbackFor = Exception.class)
     public boolean deleteDocumentForAdmin(String docId) {
         if (!StringUtils.hasText(docId)) {
             throw new BusinessException(400, "docId is required");
@@ -208,18 +217,45 @@ public class RagServiceImpl implements RagService {
         return result;
     }
 
-    private List<String> splitContent(String content, int chunkSize, int overlap) {
-        int size = Math.max(200, chunkSize);
-        int step = Math.max(50, size - Math.max(0, overlap));
+    private List<String> splitContent(String content) {
+        if (!StringUtils.hasText(content)) {
+            return List.of();
+        }
+        int targetTokens = Math.max(120, properties.getChunkTokenSize());
+        int overlapTokens = Math.max(0, Math.min(properties.getChunkTokenOverlap(), targetTokens / 2));
+        List<String> segments = splitIntoSegments(content);
         List<String> chunks = new ArrayList<>();
-        int start = 0;
-        while (start < content.length()) {
-            int end = Math.min(content.length(), start + size);
-            String chunk = content.substring(start, end).trim();
-            if (!chunk.isEmpty()) {
-                chunks.add(chunk);
+        StringBuilder current = new StringBuilder();
+        int currentTokens = 0;
+
+        for (String segment : segments) {
+            String normalized = segment == null ? "" : segment.trim();
+            if (!StringUtils.hasText(normalized)) {
+                continue;
             }
-            start += step;
+            int segmentTokens = TokenCounter.estimateTokens(normalized);
+            if (segmentTokens > targetTokens) {
+                if (currentTokens > 0) {
+                    chunks.add(current.toString().trim());
+                    current.setLength(0);
+                    currentTokens = 0;
+                }
+                chunks.addAll(splitLargeSegment(normalized, targetTokens, overlapTokens));
+                continue;
+            }
+            if (currentTokens > 0 && currentTokens + segmentTokens > targetTokens) {
+                chunks.add(current.toString().trim());
+                current.setLength(0);
+                currentTokens = 0;
+            }
+            if (currentTokens > 0) {
+                current.append("\n\n");
+            }
+            current.append(normalized);
+            currentTokens = TokenCounter.estimateTokens(current.toString());
+        }
+        if (currentTokens > 0) {
+            chunks.add(current.toString().trim());
         }
         return chunks;
     }
@@ -257,7 +293,7 @@ public class RagServiceImpl implements RagService {
         if (!StringUtils.hasText(query)) {
             return List.of();
         }
-        String trimmed = normalizeQueryV2(query);
+        String trimmed = normalizeQueryClean(query);
         List<String> keywords = new ArrayList<>();
         Matcher matcher = Pattern.compile("([\\p{IsHan}]{2,}|[A-Za-z0-9_]{3,})").matcher(trimmed);
         while (matcher.find()) {
@@ -267,7 +303,7 @@ public class RagServiceImpl implements RagService {
             }
         }
         if (!keywords.isEmpty()) {
-            return filterStopwordsV2(expandChineseKeywords(keywords));
+            return filterStopwordsClean(expandChineseKeywords(keywords));
         }
         // Fallback: allow single Han characters for very short or single-term queries.
         String compact = trimmed.replaceAll("\\s+", "");
@@ -279,22 +315,9 @@ public class RagServiceImpl implements RagService {
                 }
             }
         }
-        return filterStopwordsV2(keywords);
+        return filterStopwordsClean(keywords);
     }
 
-    private String normalizeQuery(String query) {
-        String trimmed = query.trim();
-        trimmed = trimmed.replaceAll("[“”\"'！？!?。，,.；;：:（）()【】\\[\\]]", " ");
-        trimmed = trimmed.replaceAll("\\s+", " ").trim();
-        String[] prefixes = {"介绍一下", "介绍", "什么是", "请介绍", "讲一下", "讲讲", "说明一下", "解释一下"};
-        for (String prefix : prefixes) {
-            if (trimmed.startsWith(prefix)) {
-                trimmed = trimmed.substring(prefix.length()).trim();
-                break;
-            }
-        }
-        return trimmed;
-    }
 
     private List<String> expandChineseKeywords(List<String> base) {
         LinkedHashSet<String> expanded = new LinkedHashSet<>(base);
@@ -325,39 +348,30 @@ public class RagServiceImpl implements RagService {
         return new ArrayList<>(expanded);
     }
 
-    private List<String> filterStopwords(List<String> keywords) {
-        if (keywords == null || keywords.isEmpty()) {
-            return List.of();
-        }
-                Set<String> stopwords = Set.of(
-                "介绍", "一下", "讲讲", "讲", "说明", "解释", "如何", "是什么", "什么是",
-                "存在", "系统", "相关", "主要", "内容", "信息", "问题", "为什么", "怎么",
-                "哪个", "哪些", "是否", "可以", "需要", "应该", "有没有"
-        );
-        List<String> filtered = new ArrayList<>();
-        for (String keyword : keywords) {
-            if (!StringUtils.hasText(keyword)) {
-                continue;
-            }
-            String compact = keyword.trim();
-            if (stopwords.contains(compact)) {
-                continue;
-            }
-            filtered.add(compact);
-        }
-        return filtered;
-    }
 
     private String buildSnippetContext(List<String> contents, String query) {
         StringBuilder sb = new StringBuilder();
         List<String> keywords = extractKeywords(query);
-        int maxSnippet = Math.max(400, properties.getChunkSize());
+        int maxSnippetTokens = Math.max(80, properties.getSnippetMaxTokens());
+        int contextBudgetTokens = Math.max(maxSnippetTokens, properties.getContextMaxTokens());
+        int usedTokens = 0;
         for (String content : contents) {
             if (!StringUtils.hasText(content)) {
                 continue;
             }
-            String snippet = extractSnippet(content, keywords, maxSnippet);
-            sb.append(snippet).append("\n");
+            String snippet = trimToTokenBudget(extractSnippet(content, keywords, maxSnippetTokens * 4), maxSnippetTokens);
+            int snippetTokens = TokenCounter.estimateTokens(snippet);
+            if (!StringUtils.hasText(snippet) || snippetTokens <= 0) {
+                continue;
+            }
+            if (usedTokens > 0 && usedTokens + snippetTokens > contextBudgetTokens) {
+                break;
+            }
+            if (sb.length() > 0) {
+                sb.append("\n");
+            }
+            sb.append(snippet);
+            usedTokens += snippetTokens;
         }
         return sb.toString().trim();
     }
@@ -366,9 +380,10 @@ public class RagServiceImpl implements RagService {
         if (matches == null || matches.isEmpty()) {
             return "";
         }
-        int maxChars = Math.max(2000, properties.getChunkSize() * 6);
         StringBuilder sb = new StringBuilder();
         Set<String> seen = new LinkedHashSet<>();
+        int maxTokens = Math.max(properties.getChunkTokenSize(), properties.getContextMaxTokens());
+        int usedTokens = 0;
         for (RagChunkMatch match : matches) {
             if (match == null || !StringUtils.hasText(match.getContent())) {
                 continue;
@@ -378,14 +393,26 @@ public class RagServiceImpl implements RagService {
                 continue;
             }
             seen.add(content);
-            if (sb.length() + content.length() + 1 > maxChars) {
-                int remaining = maxChars - sb.length();
-                if (remaining > 0) {
-                    sb.append(content, 0, Math.min(remaining, content.length()));
-                }
+            int contentTokens = TokenCounter.estimateTokens(content);
+            if (contentTokens <= 0) {
+                continue;
+            }
+            if (usedTokens >= maxTokens) {
                 break;
             }
-            sb.append(content).append("\n");
+            String next = content;
+            if (usedTokens + contentTokens > maxTokens) {
+                next = trimToTokenBudget(content, maxTokens - usedTokens);
+                contentTokens = TokenCounter.estimateTokens(next);
+            }
+            if (!StringUtils.hasText(next) || contentTokens <= 0) {
+                break;
+            }
+            if (sb.length() > 0) {
+                sb.append("\n");
+            }
+            sb.append(next);
+            usedTokens += contentTokens;
         }
         return sb.toString().trim();
     }
@@ -413,6 +440,168 @@ public class RagServiceImpl implements RagService {
         int start = Math.max(0, index - maxLen / 3);
         int end = Math.min(text.length(), start + maxLen);
         return text.substring(start, end);
+    }
+
+    private List<String> splitIntoSegments(String content) {
+        String normalized = content.replace("\r\n", "\n").trim();
+        if (!StringUtils.hasText(normalized)) {
+            return List.of();
+        }
+        List<String> segments = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inCodeBlock = false;
+        for (String line : normalized.split("\n", -1)) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("```")) {
+                if (current.length() > 0 && !inCodeBlock) {
+                    addParagraphSegments(segments, current.toString());
+                    current.setLength(0);
+                }
+                current.append(line).append("\n");
+                inCodeBlock = !inCodeBlock;
+                if (!inCodeBlock) {
+                    segments.add(current.toString().trim());
+                    current.setLength(0);
+                }
+                continue;
+            }
+            if (inCodeBlock) {
+                current.append(line).append("\n");
+                continue;
+            }
+            if (trimmed.isEmpty()) {
+                addParagraphSegments(segments, current.toString());
+                current.setLength(0);
+                continue;
+            }
+            if (current.length() > 0) {
+                current.append("\n");
+            }
+            current.append(line);
+        }
+        addParagraphSegments(segments, current.toString());
+        return segments.stream().filter(StringUtils::hasText).toList();
+    }
+
+    private void addParagraphSegments(List<String> segments, String raw) {
+        String normalized = raw == null ? "" : raw.trim();
+        if (!StringUtils.hasText(normalized)) {
+            return;
+        }
+        for (String part : PARAGRAPH_SPLIT_PATTERN.split(normalized)) {
+            String item = part.trim();
+            if (StringUtils.hasText(item)) {
+                segments.add(item);
+            }
+        }
+    }
+
+    private List<String> splitLargeSegment(String segment, int targetTokens, int overlapTokens) {
+        List<String> chunks = new ArrayList<>();
+        int start = 0;
+        int length = segment.length();
+        while (start < length) {
+            int end = findChunkEnd(segment, start, targetTokens);
+            if (end <= start) {
+                break;
+            }
+            String chunk = segment.substring(start, end).trim();
+            if (StringUtils.hasText(chunk)) {
+                chunks.add(chunk);
+            }
+            if (end >= length) {
+                break;
+            }
+            int nextStart = findOverlapStart(segment, start, end, overlapTokens);
+            start = Math.max(nextStart, start + 1);
+        }
+        return chunks;
+    }
+
+    private int findChunkEnd(String text, int start, int targetTokens) {
+        int remaining = text.length() - start;
+        if (remaining <= 0) {
+            return start;
+        }
+        int low = start + 1;
+        int high = Math.min(text.length(), start + Math.max(160, targetTokens * 6));
+        while (high < text.length()
+                && TokenCounter.estimateTokens(text.substring(start, high)) < targetTokens) {
+            int nextHigh = Math.min(text.length(), high + Math.max(120, targetTokens * 3));
+            if (nextHigh == high) {
+                break;
+            }
+            high = nextHigh;
+        }
+        int best = low;
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            int tokens = TokenCounter.estimateTokens(text.substring(start, mid));
+            if (tokens <= targetTokens) {
+                best = mid;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+        return adjustBoundaryClean(text, start, best);
+    }
+
+
+    private int adjustBoundaryClean(String text, int start, int end) {
+        int min = Math.min(text.length(), start + 40);
+        int candidate = end;
+        for (int i = end - 1; i >= min; i--) {
+            char c = text.charAt(i);
+            if (c == '\n' || c == '。' || c == '！' || c == '？' || c == '.' || c == '!' || c == '?' || c == ';') {
+                candidate = i + 1;
+                break;
+            }
+        }
+        return Math.max(min, candidate);
+    }
+
+    private int findOverlapStart(String text, int chunkStart, int chunkEnd, int overlapTokens) {
+        if (overlapTokens <= 0) {
+            return chunkEnd;
+        }
+        int low = chunkStart;
+        int high = chunkEnd;
+        int best = chunkEnd;
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            int tokens = TokenCounter.estimateTokens(text.substring(mid, chunkEnd));
+            if (tokens >= overlapTokens) {
+                best = mid;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+        return Math.max(chunkStart, Math.min(best, chunkEnd - 1));
+    }
+
+    private String trimToTokenBudget(String text, int maxTokens) {
+        if (!StringUtils.hasText(text) || maxTokens <= 0) {
+            return "";
+        }
+        if (TokenCounter.estimateTokens(text) <= maxTokens) {
+            return text;
+        }
+        int low = 1;
+        int high = text.length();
+        int best = 0;
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            int tokens = TokenCounter.estimateTokens(text.substring(0, mid));
+            if (tokens <= maxTokens) {
+                best = mid;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+        return text.substring(0, Math.max(0, best)).trim();
     }
 
     private boolean hasKeywordHit(List<RagChunkMatch> matches,
@@ -456,7 +645,7 @@ public class RagServiceImpl implements RagService {
         if (!StringUtils.hasText(query)) {
             return mustHave;
         }
-        String normalized = normalizeQuery(query);
+        String normalized = normalizeQueryClean(query);
         Matcher latin = Pattern.compile("([A-Za-z0-9]{3,})").matcher(normalized);
         while (latin.find()) {
             String token = latin.group(1);
@@ -501,51 +690,14 @@ public class RagServiceImpl implements RagService {
         return false;
     }
 
-    private String normalizeQueryV2(String query) {
-        String trimmed = query == null ? "" : query.trim();
-        trimmed = trimmed.replaceAll("[“”\"'’‘，,。；;：:！!？?（）()【】\\[\\]<>《》]", " ");
-        trimmed = trimmed.replaceAll("\\s+", " ").trim();
-        String[] prefixes = {
-                "介绍一下", "介绍下", "介绍", "什么是", "请介绍", "讲一下", "讲讲", "说明一下", "解释一下", "讲解一下"
-        };
-        for (String prefix : prefixes) {
-            if (trimmed.startsWith(prefix)) {
-                trimmed = trimmed.substring(prefix.length()).trim();
-                break;
-            }
-        }
-        return trimmed;
-    }
 
-    private List<String> filterStopwordsV2(List<String> keywords) {
-        if (keywords == null || keywords.isEmpty()) {
-            return List.of();
-        }
-        Set<String> stopwords = Set.of(
-                "介绍", "介绍一下", "介绍下", "讲一下", "讲讲", "说明", "说明一下", "解释", "解释一下",
-                "如何", "是什么", "什么是", "是否", "可以", "需要", "应该", "有没有", "怎么",
-                "哪个", "哪些", "主要", "内容", "信息", "相关", "问题", "存在", "系统"
-        );
-        List<String> filtered = new ArrayList<>();
-        for (String keyword : keywords) {
-            if (!StringUtils.hasText(keyword)) {
-                continue;
-            }
-            String compact = keyword.trim();
-            if (stopwords.contains(compact)) {
-                continue;
-            }
-            filtered.add(compact);
-        }
-        return filtered;
-    }
 
     private List<String> extractMustHaveKeywordsV2(String query, List<String> keywords) {
         List<String> mustHave = new ArrayList<>();
         if (!StringUtils.hasText(query)) {
             return mustHave;
         }
-        String normalized = normalizeQueryV2(query);
+        String normalized = normalizeQueryClean(query);
         Matcher latin = Pattern.compile("([A-Za-z0-9]{3,})").matcher(normalized);
         while (latin.find()) {
             String token = latin.group(1);
@@ -815,6 +967,45 @@ public class RagServiceImpl implements RagService {
         return refs;
     }
 
+    private String normalizeQueryClean(String query) {
+        String trimmed = query == null ? "" : query.trim();
+        trimmed = trimmed.replaceAll("[“”\"'‘’、，,。；;：:！？!?（）()【】\\[\\]<>《》]", " ");
+        trimmed = trimmed.replaceAll("\\s+", " ").trim();
+        String[] prefixes = {
+                "介绍一个", "介绍一下", "介绍", "什么是", "请介绍", "讲一个", "讲讲", "说明一个", "解释一个", "讲解一个"
+        };
+        for (String prefix : prefixes) {
+            if (trimmed.startsWith(prefix)) {
+                trimmed = trimmed.substring(prefix.length()).trim();
+                break;
+            }
+        }
+        return trimmed;
+    }
+
+    private List<String> filterStopwordsClean(List<String> keywords) {
+        if (keywords == null || keywords.isEmpty()) {
+            return List.of();
+        }
+        Set<String> stopwords = Set.of(
+                "介绍", "介绍一个", "介绍一下", "讲一个", "讲讲", "说明", "说明一个", "解释", "解释一个",
+                "如何", "是什么", "什么是", "是否", "可以", "需要", "应该", "有没有", "怎么",
+                "哪个", "哪些", "主要", "内容", "信息", "相关", "问题", "存在", "系统"
+        );
+        List<String> filtered = new ArrayList<>();
+        for (String keyword : keywords) {
+            if (!StringUtils.hasText(keyword)) {
+                continue;
+            }
+            String compact = keyword.trim();
+            if (stopwords.contains(compact)) {
+                continue;
+            }
+            filtered.add(compact);
+        }
+        return filtered;
+    }
+
     private List<RagChunkMatch> mmrSearch(Long userId,
                                           float[] queryEmbedding,
                                           int topK,
@@ -829,6 +1020,8 @@ public class RagServiceImpl implements RagService {
         double lambda = clamp(search.getMmrLambda(), 0.0, 1.0);
         double minScore = Math.max(0.0, search.getMinScore());
         List<RagChunkMatch> selected = new ArrayList<>();
+        List<RagChunkCandidate> selectedCandidates = new ArrayList<>();
+        List<Double> selectedScores = new ArrayList<>();
         List<float[]> selectedEmbeddings = new ArrayList<>();
 
         for (int i = 0; i < topK; i++) {
@@ -859,9 +1052,22 @@ public class RagServiceImpl implements RagService {
                 break;
             }
             RagChunkCandidate best = candidates.get(bestIdx);
-            selected.add(new RagChunkMatch(best.getDocId(), best.getContent(), bestQuerySim));
+            selectedCandidates.add(best);
+            selectedScores.add(bestQuerySim);
             selectedEmbeddings.add(best.getEmbedding());
             candidates.set(bestIdx, null);
+        }
+        if (!selectedCandidates.isEmpty()) {
+            List<Long> ids = selectedCandidates.stream()
+                    .map(RagChunkCandidate::getId)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+            java.util.Map<Long, String> contentMap = ragRepository.findChunkContentsByIds(userId, ids);
+            for (int i = 0; i < selectedCandidates.size(); i++) {
+                RagChunkCandidate c = selectedCandidates.get(i);
+                String content = c.getId() == null ? null : contentMap.get(c.getId());
+                selected.add(new RagChunkMatch(c.getDocId(), content, selectedScores.get(i)));
+            }
         }
         return selected;
     }

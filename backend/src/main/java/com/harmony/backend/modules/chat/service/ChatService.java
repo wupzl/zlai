@@ -10,13 +10,13 @@ public interface ChatService extends IService<Message> {
                                               String agentId, Boolean useRag, String ragQuery, Integer ragTopK);
 
     Flux<String> chat(Long userId, String chatId, String prompt, String parentMessageId,
-                      String messageId, String gptId, String agentId, String model, String toolModel,
+                      String messageId, String requestId, String gptId, String agentId, String model, String toolModel,
                       Boolean useRag, String ragQuery, Integer ragTopK);
-    Flux<String> regenerateAssistant(Long userId, String chatId, String assistantMessageId,
+    Flux<String> regenerateAssistant(Long userId, String chatId, String assistantMessageId, String requestId,
                                      String gptId, String agentId, String model, String toolModel,
                                      Boolean useRag, String ragQuery, Integer ragTopK);
 
-    Object sendMessage(Long userId, String chatId, String prompt, String parentMessageId, String messageId,
+    Object sendMessage(Long userId, String chatId, String prompt, String parentMessageId, String messageId, String requestId,
                        String gptId, String agentId, String model, String toolModel, Boolean useRag, String ragQuery, Integer ragTopK);
 
     Object agetChatResponse(String chatId, String messageId, boolean includeSystem);

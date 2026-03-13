@@ -75,7 +75,7 @@ public class AdminUserController {
 
     @PutMapping("/{id}/balance")
     public ApiResponse<Boolean> updateBalance(@PathVariable Long id,
-                                              @RequestParam int delta) {
+                                              @RequestParam long delta) {
         return ApiResponse.success(userService.updateBalance(id, delta));
     }
 

@@ -6,16 +6,17 @@ import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTVerificationException;
 import com.auth0.jwt.interfaces.DecodedJWT;
-import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.Set;
 
 @Component
-@Slf4j
 public class JwtUtil {
 
     @Value("${app.jwt.access-secret}")
@@ -37,6 +38,21 @@ public class JwtUtil {
 
     public JwtUtil(IdCryptoUtil idCryptoUtil) {
         this.idCryptoUtil = idCryptoUtil;
+    }
+
+    @PostConstruct
+    public void validateSecrets() {
+        validateSecret("app.jwt.access-secret", accessSecret);
+        validateSecret("app.jwt.refresh-secret", refreshSecret);
+    }
+
+    private void validateSecret(String key, String value) {
+        if (!StringUtils.hasText(value)) {
+            throw new IllegalStateException(key + " must be configured");
+        }
+        if (Set.of("change-me", "your-access-secret-here", "your-refresh-secret-here").contains(value)) {
+            throw new IllegalStateException(key + " uses an insecure default value");
+        }
     }
 
     /**

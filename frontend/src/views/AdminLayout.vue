@@ -45,7 +45,7 @@
 </template>
 
 <script>
-import { clearAdminFlag, clearToken, clearUserInfo } from "../api";
+import { clearAuthState } from "../api";
 
 export default {
   name: "AdminLayout",
@@ -59,9 +59,7 @@ export default {
       this.sidebarCollapsed = !this.sidebarCollapsed;
     },
     logout() {
-      clearToken();
-      clearUserInfo();
-      clearAdminFlag();
+      clearAuthState();
       this.$router.push("/auth/admin");
     }
   }

@@ -1,7 +1,11 @@
 package com.harmony.backend.modules.chat.controller;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.harmony.backend.common.config.AppCorsProperties;
+import com.harmony.backend.common.filter.GlobalRateLimitFilter;
+import com.harmony.backend.common.filter.JwtAuthenticationFilter;
 import com.harmony.backend.modules.chat.config.BillingProperties;
+import com.harmony.backend.modules.chat.config.ChatRateLimitProperties;
 import com.harmony.backend.modules.chat.controller.response.ChatSessionVO;
 import com.harmony.backend.modules.chat.service.ChatService;
 import com.harmony.backend.modules.chat.service.ModelPricingService;
@@ -16,11 +20,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.List;
 
@@ -28,6 +34,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -47,6 +54,8 @@ class ChatControllerTest {
     @MockBean
     private BillingProperties billingProperties;
     @MockBean
+    private ChatRateLimitProperties chatRateLimitProperties;
+    @MockBean
     private RedisTemplate<String, Object> redisTemplate;
     @MockBean
     private JwtUtil jwtUtil;
@@ -54,6 +63,14 @@ class ChatControllerTest {
     private UserMapper userMapper;
     @MockBean
     private UserSecurityService userSecurityService;
+    @MockBean
+    private AppCorsProperties appCorsProperties;
+    @MockBean
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
+    @MockBean
+    private GlobalRateLimitFilter globalRateLimitFilter;
+    @MockBean(name = "webMvcTaskExecutor")
+    private AsyncTaskExecutor webMvcTaskExecutor;
 
     @Mock
     private ValueOperations<String, Object> valueOperations;
@@ -69,15 +86,30 @@ class ChatControllerTest {
         when(jwtUtil.getInternalUserIdFromToken(eq("token"), eq(false))).thenReturn(1L);
         when(jwtUtil.verifyAccessToken(eq("token"))).thenReturn(org.mockito.Mockito.mock(DecodedJWT.class));
         when(jwtUtil.getTokenRemainingTime(eq("token"), eq(false))).thenReturn(60L);
+        when(chatRateLimitProperties.getStreamUserLimit()).thenReturn(100);
+        when(chatRateLimitProperties.getStreamIpLimit()).thenReturn(100);
+        when(chatRateLimitProperties.getStreamWindowSeconds()).thenReturn(60);
+        when(chatRateLimitProperties.getMessageUserLimit()).thenReturn(100);
+        when(chatRateLimitProperties.getMessageIpLimit()).thenReturn(100);
+        when(chatRateLimitProperties.getMessageWindowSeconds()).thenReturn(60);
+        when(chatRateLimitProperties.getSessionUserLimit()).thenReturn(100);
+        when(chatRateLimitProperties.getSessionIpLimit()).thenReturn(100);
+        when(chatRateLimitProperties.getSessionWindowSeconds()).thenReturn(60);
+        when(chatRateLimitProperties.getDefaultUserLimit()).thenReturn(100);
+        when(chatRateLimitProperties.getDefaultIpLimit()).thenReturn(100);
+        when(chatRateLimitProperties.getDefaultWindowSeconds()).thenReturn(60);
     }
 
     @Test
     void streamChat_returnsErrorWhenPromptEmpty() throws Exception {
-        mockMvc.perform(post("/api/chat/stream")
+        MvcResult result = mockMvc.perform(post("/api/chat/stream")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Authorization", "Bearer token")
                         .content("{}"))
                 .andExpect(status().isOk())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(result))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Message content is empty")));
     }
 
@@ -109,17 +141,26 @@ class ChatControllerTest {
     @Test
     void streamChat_returnsErrorWhenBalanceInsufficient() throws Exception {
         when(sessionService.checkChatBelong(eq(1L), eq("chat-1"))).thenReturn(true);
-        when(chatService.chat(eq(1L), eq("chat-1"), anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        when(chatService.chat(eq(1L), eq("chat-1"), anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(reactor.core.publisher.Flux.just(
                         "event:message_chunk\ndata:{\"role\":\"assistant\",\"content\":\"Insufficient token balance\"}\n\n",
                         "event:done\ndata:{\"success\":false}\n\n"
                 ));
 
-        mockMvc.perform(post("/api/chat/stream")
+        MvcResult result = mockMvc.perform(post("/api/chat/stream")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Authorization", "Bearer token")
                         .content("{\"chatId\":\"chat-1\",\"prompt\":\"hi\"}"))
                 .andExpect(status().isOk())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(result))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Insufficient token balance")));
+    }
+
+    @Test
+    void getSessions_returnsUnauthorizedWithoutToken() throws Exception {
+        mockMvc.perform(get("/api/chat/sessions"))
+                .andExpect(status().isUnauthorized());
     }
 }

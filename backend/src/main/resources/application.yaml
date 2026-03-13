@@ -98,8 +98,8 @@ app:
 
 
   jwt:
-    access-secret: your-access-secret-here
-    refreshSecret: your-refresh-secret-here
+    access-secret: ${APP_JWT_ACCESS_SECRET:}
+    refresh-secret: ${APP_JWT_REFRESH_SECRET:}
     issuer: ai-chat-platform
   chat:
     rate-limit:
@@ -177,18 +177,25 @@ app:
     blocked-keywords: []
   agents:
     executor:
-      core-pool-size: 10
-      max-pool-size: 50
-      queue-capacity: 100
+      core-pool-size: 8
+      max-pool-size: 16
+      queue-capacity: 80
       await-termination-seconds: 30
     multiagent-timeout-seconds: 20
   webmvc:
     async:
       core-pool-size: 4
-      max-pool-size: 16
-      queue-capacity: 200
+      max-pool-size: 8
+      queue-capacity: 120
   tools:
     search:
+      executor:
+        pool-size: 12
+      max-concurrent-requests: 20
+      acquire-timeout-ms: 200
+      http-retry-max-attempts: 2
+      http-retry-initial-backoff-ms: 200
+      http-retry-max-backoff-ms: 1200
       searx-enabled: ${APP_TOOLS_SEARCH_SEARX_ENABLED:${SEARX_ENABLED:false}}
       searx-url: ${APP_TOOLS_SEARCH_SEARX_URL:${SEARX_URL:}}
       serpapi-key: ${APP_TOOLS_SEARCH_SERPAPI_KEY:${SERPAPI_KEY:}}
@@ -212,7 +219,7 @@ app:
     vector-size: 1536
     ocr:
       enabled: true
-      tessdata-path: "D:\\Software\\tesseract\\tessdata"
+      tessdata-path: "${TESSDATA_PATH:}"
       language: "eng+chi_sim"
       default-user-quota: 200
       max-images-per-request: 50
@@ -223,6 +230,10 @@ app:
     default-top-k: 5
     chunk-size: 800
     chunk-overlap: 100
+    chunk-token-size: 500
+    chunk-token-overlap: 80
+    context-max-tokens: 1800
+    snippet-max-tokens: 240
     search:
       strategy: mmr
       min-score: 0.2

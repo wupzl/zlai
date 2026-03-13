@@ -12,6 +12,10 @@ public class RagProperties {
     private int defaultTopK = 5;
     private int chunkSize = 800;
     private int chunkOverlap = 100;
+    private int chunkTokenSize = 500;
+    private int chunkTokenOverlap = 80;
+    private int contextMaxTokens = 1800;
+    private int snippetMaxTokens = 240;
     private final Search search = new Search();
 
     private final Datasource datasource = new Datasource();

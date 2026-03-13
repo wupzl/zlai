@@ -39,6 +39,7 @@ build/
 # Build outputs
 backend/target/
 frontend/dist/
+frontend/node_modules/
 build/
 
 # Local artifacts

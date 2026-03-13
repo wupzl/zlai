@@ -5,6 +5,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -31,6 +33,9 @@ public class TaskExecutorConfig {
 
     @Value("${app.webmvc.async.queue-capacity:200}")
     private int webMvcQueueCapacity;
+
+    @Value("${app.tools.search.executor.pool-size:12}")
+    private int webSearchPoolSize;
 
     @Bean(name = "agentExecutor")
     public Executor agentExecutor() {
@@ -62,5 +67,10 @@ public class TaskExecutorConfig {
     @Bean(name = "taskExecutor")
     public Executor taskExecutor(ThreadPoolTaskExecutor webMvcTaskExecutor) {
         return webMvcTaskExecutor;
+    }
+
+    @Bean(name = "webSearchExecutor", destroyMethod = "shutdown")
+    public ExecutorService webSearchExecutor() {
+        return Executors.newFixedThreadPool(Math.max(2, webSearchPoolSize));
     }
 }

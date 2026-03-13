@@ -29,7 +29,7 @@
 </template>
 
 <script>
-import { apiRequest, setToken, setRefreshToken, setUserInfo, setAdminFlag } from "../api";
+import { apiRequest, setToken, setRefreshToken, setUserInfo } from "../api";
 
 export default {
   name: "UserAuthView",
@@ -50,7 +50,6 @@ export default {
         setToken(data.accessToken);
         setRefreshToken(data.refreshToken);
         setUserInfo(data.userInfo || null);
-        setAdminFlag(false);
         this.status = "Login success";
         this.$router.push("/app/chat");
       } catch (e) {

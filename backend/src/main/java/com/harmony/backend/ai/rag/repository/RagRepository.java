@@ -12,8 +12,11 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Repository
 @ConditionalOnBean(name = "ragJdbcTemplate")
@@ -41,10 +44,11 @@ public class RagRepository {
     public List<RagChunkMatch> search(Long userId, float[] embedding, int topK) {
         PGvector vector = new PGvector(embedding);
         return ragJdbcTemplate.query(
-                "SELECT doc_id, content, (embedding <-> ?) AS distance " +
-                        "FROM rag_chunk WHERE user_id = ? " +
-                        "ORDER BY embedding <-> ? LIMIT ?",
-                new Object[]{vector, userId, vector, topK},
+                "SELECT doc_id, content, distance FROM (" +
+                        " SELECT doc_id, content, (embedding <-> ?) AS distance " +
+                        " FROM rag_chunk WHERE user_id = ? " +
+                        ") t ORDER BY distance LIMIT ?",
+                new Object[]{vector, userId, topK},
                 new RagChunkMatchMapper()
         );
     }
@@ -52,12 +56,33 @@ public class RagRepository {
     public List<RagChunkCandidate> searchCandidates(Long userId, float[] embedding, int topK) {
         PGvector vector = new PGvector(embedding);
         return ragJdbcTemplate.query(
-                "SELECT doc_id, content, embedding, (embedding <-> ?) AS distance " +
-                        "FROM rag_chunk WHERE user_id = ? " +
-                        "ORDER BY embedding <-> ? LIMIT ?",
-                new Object[]{vector, userId, vector, topK},
+                "SELECT id, doc_id, embedding, distance FROM (" +
+                        " SELECT id, doc_id, embedding, (embedding <-> ?) AS distance " +
+                        " FROM rag_chunk WHERE user_id = ? " +
+                        ") t ORDER BY distance LIMIT ?",
+                new Object[]{vector, userId, topK},
                 new RagChunkCandidateMapper()
         );
+    }
+
+    public Map<Long, String> findChunkContentsByIds(Long userId, List<Long> chunkIds) {
+        if (chunkIds == null || chunkIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = chunkIds.stream().map(id -> "?").collect(Collectors.joining(","));
+        String sql = "SELECT id, content FROM rag_chunk WHERE user_id = ? AND id IN (" + placeholders + ")";
+        Object[] args = new Object[chunkIds.size() + 1];
+        args[0] = userId;
+        for (int i = 0; i < chunkIds.size(); i++) {
+            args[i + 1] = chunkIds.get(i);
+        }
+        List<Map.Entry<Long, String>> rows = ragJdbcTemplate.query(sql, args, (rs, rowNum) ->
+                Map.entry(rs.getLong("id"), rs.getString("content")));
+        Map<Long, String> map = new HashMap<>();
+        for (Map.Entry<Long, String> row : rows) {
+            map.put(row.getKey(), row.getValue());
+        }
+        return map;
     }
 
     public List<RagDocumentSummary> listDocuments(Long userId, int offset, int size) {
@@ -146,10 +171,12 @@ public class RagRepository {
                         "WHERE doc_id = ? AND user_id = ? AND is_deleted = false",
                 docId, userId
         );
-        ragJdbcTemplate.update(
-                "DELETE FROM rag_chunk WHERE doc_id = ? AND user_id = ?",
-                docId, userId
-        );
+        if (updated > 0) {
+            ragJdbcTemplate.update(
+                    "DELETE FROM rag_chunk WHERE doc_id = ? AND user_id = ?",
+                    docId, userId
+            );
+        }
         return updated > 0;
     }
 
@@ -168,10 +195,12 @@ public class RagRepository {
                         "WHERE doc_id = ? AND is_deleted = false",
                 docId
         );
-        ragJdbcTemplate.update(
-                "DELETE FROM rag_chunk WHERE doc_id = ? AND user_id = ?",
-                docId, userId
-        );
+        if (updated > 0) {
+            ragJdbcTemplate.update(
+                    "DELETE FROM rag_chunk WHERE doc_id = ? AND user_id = ?",
+                    docId, userId
+            );
+        }
         return updated > 0;
     }
 
@@ -189,8 +218,8 @@ public class RagRepository {
     private static class RagChunkCandidateMapper implements RowMapper<RagChunkCandidate> {
         @Override
         public RagChunkCandidate mapRow(ResultSet rs, int rowNum) throws SQLException {
+            long id = rs.getLong("id");
             String docId = rs.getString("doc_id");
-            String content = rs.getString("content");
             double distance = rs.getDouble("distance");
             float[] embedding = null;
             Object vectorObj = rs.getObject("embedding");
@@ -203,7 +232,7 @@ public class RagRepository {
                     embedding = null;
                 }
             }
-            return new RagChunkCandidate(docId, content, embedding, distance);
+            return new RagChunkCandidate(id, docId, null, embedding, distance);
         }
     }
 

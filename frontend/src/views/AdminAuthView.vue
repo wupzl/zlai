@@ -19,7 +19,7 @@
 </template>
 
 <script>
-import { apiRequest, setToken, setRefreshToken, setUserInfo, setAdminFlag } from "../api";
+import { apiRequest, setToken, setRefreshToken, setUserInfo } from "../api";
 
 export default {
   name: "AdminAuthView",
@@ -39,7 +39,6 @@ export default {
         setToken(data.accessToken);
         setRefreshToken(data.refreshToken);
         setUserInfo(data.userInfo || null);
-        setAdminFlag(true);
         this.status = "Admin login success";
         this.$router.push("/admin/dashboard");
       } catch (e) {

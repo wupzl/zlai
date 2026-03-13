@@ -22,6 +22,7 @@ import com.harmony.backend.modules.chat.service.SessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -52,6 +53,7 @@ import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.Executor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 
 @RestController
@@ -68,6 +70,8 @@ public class RagController {
     private final RedisTemplate<String, Object> redisTemplate;
     private final OcrSettingsService ocrSettingsService;
     private final com.harmony.backend.common.mapper.UserMapper userMapper;
+    @Qualifier("taskExecutor")
+    private final Executor taskExecutor;
     @Value("${app.rag.ingest-filepath-enabled:false}")
     private boolean ingestFilepathEnabled;
     @Value("${app.rag.remote-images.max-count:20}")
@@ -83,6 +87,8 @@ public class RagController {
             Pattern.compile("!\\[[^\\]]*\\]\\((https?://[^)\\s]+)(?:\\s+\"[^\"]*\")?\\)");
     private static final Pattern REMOTE_HTML_IMAGE =
             Pattern.compile("<img[^>]*src=[\"'](https?://[^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final String INGEST_TASK_KEY_PREFIX = "rag:ingest:task:";
+    private static final Duration INGEST_TASK_TTL = Duration.ofHours(24);
 
     @PostMapping("/ingest")
     public ApiResponse<RagIngestResponse> ingest(@RequestBody RagIngestRequest request) {
@@ -96,6 +102,27 @@ public class RagController {
             log.error("RAG ingest failed", e);
             return ApiResponse.error("RAG ingest failed");
         }
+    }
+
+    @PostMapping("/ingest/async")
+    public ApiResponse<Map<String, Object>> ingestAsync(@RequestBody RagIngestRequest request) {
+        Long userId = RequestUtils.getCurrentUserId();
+        String taskId = UUID.randomUUID().toString();
+        String title = request == null ? null : request.getTitle();
+        updateTaskStatus(taskId, userId, "pending", 0, "Queued", null, title);
+        taskExecutor.execute(() -> {
+            updateTaskStatus(taskId, userId, "running", 15, "Embedding document", null, title);
+            try {
+                String docId = ragService.ingest(userId, title, request.getContent());
+                updateTaskStatus(taskId, userId, "completed", 100, "Completed", docId, title);
+            } catch (BusinessException e) {
+                updateTaskStatus(taskId, userId, "failed", 100, e.getMessage(), null, title);
+            } catch (Exception e) {
+                log.error("Async RAG ingest failed: taskId={}", taskId, e);
+                updateTaskStatus(taskId, userId, "failed", 100, "RAG ingest failed", null, title);
+            }
+        });
+        return ApiResponse.success(readTaskStatus(taskId));
     }
 
     @PostMapping("/ingest/markdown")
@@ -267,7 +294,13 @@ public class RagController {
             if (!isAdmin && ocrSettings.isEnabled()) {
                 enforceOcrRateLimit(userId, ocrSettings);
             }
-            String text = extractTextWithEmbeddedOcr(file, ocrSettings, isAdmin);
+            byte[] fileBytes = file.getBytes();
+            String text = extractTextWithEmbeddedOcr(
+                    fileBytes,
+                    file.getOriginalFilename(),
+                    file.getContentType(),
+                    ocrSettings,
+                    isAdmin);
             if (text == null || text.isBlank()) {
                 return ApiResponse.error(400, "file content is empty");
             }
@@ -282,12 +315,73 @@ public class RagController {
         }
     }
 
-    private String extractTextWithEmbeddedOcr(MultipartFile file, OcrSettings ocrSettings, boolean isAdmin) throws Exception {
-        String filename = file.getOriginalFilename();
-        String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
+    @PostMapping("/ingest/file-upload/async")
+    public ApiResponse<Map<String, Object>> ingestFileUploadAsync(@RequestParam("file") MultipartFile file) {
+        Long userId = RequestUtils.getCurrentUserId();
+        try {
+            boolean isAdmin = RequestUtils.isAdmin();
+            OcrSettings ocrSettings = ocrSettingsService.getSettings();
+            if (file == null || file.isEmpty()) {
+                return ApiResponse.error(400, "file is required");
+            }
+            if (!isAllowedDocFile(file)) {
+                return ApiResponse.error(400, "Unsupported file type");
+            }
+            if (!isAdmin && ocrSettings.isEnabled()) {
+                enforceOcrRateLimit(userId, ocrSettings);
+            }
+            byte[] fileBytes = file.getBytes();
+            String filename = file.getOriginalFilename();
+            String contentType = file.getContentType();
+            String title = filename == null ? "Document" : filename;
+            String taskId = UUID.randomUUID().toString();
+            updateTaskStatus(taskId, userId, "pending", 0, "Queued", null, title);
+            taskExecutor.execute(() -> {
+                try {
+                    updateTaskStatus(taskId, userId, "running", 20, "Extracting text", null, title);
+                    String text = extractTextWithEmbeddedOcr(fileBytes, filename, contentType, ocrSettings, isAdmin);
+                    if (text == null || text.isBlank()) {
+                        updateTaskStatus(taskId, userId, "failed", 100, "file content is empty", null, title);
+                        return;
+                    }
+                    updateTaskStatus(taskId, userId, "running", 70, "Embedding document", null, title);
+                    String docId = ragService.ingest(userId, title, text);
+                    updateTaskStatus(taskId, userId, "completed", 100, "Completed", docId, title);
+                } catch (BusinessException e) {
+                    updateTaskStatus(taskId, userId, "failed", 100, e.getMessage(), null, title);
+                } catch (Exception e) {
+                    log.error("Async file ingest failed: taskId={}", taskId, e);
+                    updateTaskStatus(taskId, userId, "failed", 100, "RAG file upload failed", null, title);
+                }
+            });
+            return ApiResponse.success(readTaskStatus(taskId));
+        } catch (BusinessException e) {
+            return ApiResponse.error(e.getCode(), e.getMessage());
+        } catch (Exception e) {
+            log.error("RAG async file upload failed", e);
+            return ApiResponse.error("RAG file upload failed");
+        }
+    }
+
+    @GetMapping("/ingest/tasks/{taskId}")
+    public ApiResponse<Map<String, Object>> getIngestTask(@PathVariable String taskId) {
+        Long userId = RequestUtils.getCurrentUserId();
+        Map<String, Object> status = readTaskStatus(taskId);
+        Object ownerId = status.get("userId");
+        if (ownerId != null && !String.valueOf(userId).equals(String.valueOf(ownerId)) && !RequestUtils.isAdmin()) {
+            return ApiResponse.error(403, "Forbidden");
+        }
+        return ApiResponse.success(status);
+    }
+
+    private String extractTextWithEmbeddedOcr(byte[] fileBytes,
+                                              String filename,
+                                              String contentType,
+                                              OcrSettings ocrSettings,
+                                              boolean isAdmin) throws Exception {
+        String lowerContentType = contentType == null ? "" : contentType.toLowerCase();
         if (isPlainText(filename, contentType)) {
-            byte[] raw = file.getBytes();
-            return decodeTextSmart(raw);
+            return decodeTextSmart(fileBytes);
         }
         AutoDetectParser parser = new AutoDetectParser();
         ParseContext context = new ParseContext();
@@ -335,17 +429,17 @@ public class RagController {
             }
         };
         context.set(EmbeddedDocumentExtractor.class, extractor);
-        try (TikaInputStream input = TikaInputStream.get(file.getInputStream())) {
+        try (TikaInputStream input = TikaInputStream.get(fileBytes)) {
             parser.parse(input, handler, metadata, context);
         }
         String baseText = handler.toString();
-        if (contentType.contains("pdf")) {
+        if (lowerContentType.contains("pdf")) {
             int maxPages = (baseText == null || baseText.trim().length() < 200) ? 12 : 6;
             if (!isAdmin) {
                 maxPages = Math.min(maxPages, ocrSettings.getMaxPdfPages());
             }
             if (ocrSettings.isEnabled()) {
-                String pdfOcr = ocrPdfPages(file, maxPages);
+                String pdfOcr = ocrPdfPages(fileBytes, maxPages);
                 if (pdfOcr != null && !pdfOcr.isBlank()) {
                     ocrBlock.append("\n\n---\nPDF Page OCR\n").append(pdfOcr.trim()).append("\n");
                 }
@@ -415,8 +509,8 @@ public class RagController {
         }
     }
 
-    private String ocrPdfPages(MultipartFile file, int maxPages) {
-        try (PDDocument doc = PDDocument.load(file.getInputStream())) {
+    private String ocrPdfPages(byte[] fileBytes, int maxPages) {
+        try (PDDocument doc = PDDocument.load(fileBytes)) {
             PDFRenderer renderer = new PDFRenderer(doc);
             int pages = Math.min(doc.getNumberOfPages(), Math.max(1, maxPages));
             StringBuilder sb = new StringBuilder();
@@ -612,6 +706,38 @@ public class RagController {
             return Math.max(0, defaultQuota);
         }
         return Math.max(0, balance);
+    }
+
+    private void updateTaskStatus(String taskId, Long userId, String status, int progress, String message, String docId, String title) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("taskId", taskId);
+        payload.put("userId", userId);
+        payload.put("status", status);
+        payload.put("progress", progress);
+        payload.put("message", message);
+        payload.put("docId", docId);
+        payload.put("title", title);
+        payload.put("updatedAt", System.currentTimeMillis());
+        redisTemplate.opsForHash().putAll(taskKey(taskId), payload);
+        redisTemplate.expire(taskKey(taskId), INGEST_TASK_TTL);
+    }
+
+    private Map<String, Object> readTaskStatus(String taskId) {
+        Map<Object, Object> raw = redisTemplate.opsForHash().entries(taskKey(taskId));
+        Map<String, Object> result = new HashMap<>();
+        if (raw == null || raw.isEmpty()) {
+            result.put("taskId", taskId);
+            result.put("status", "missing");
+            result.put("progress", 0);
+            result.put("message", "Task not found");
+            return result;
+        }
+        raw.forEach((key, value) -> result.put(String.valueOf(key), value));
+        return result;
+    }
+
+    private String taskKey(String taskId) {
+        return INGEST_TASK_KEY_PREFIX + taskId;
     }
 
     @PostMapping("/query")

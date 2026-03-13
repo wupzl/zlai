@@ -51,7 +51,7 @@ public class AdminUserServiceImpl extends ServiceImpl<UserMapper, User> implemen
     }
 
     @Override
-    public boolean updateBalance(Long id, int delta) {
+    public boolean updateBalance(Long id, long delta) {
         if (id == null) {
             return false;
         }

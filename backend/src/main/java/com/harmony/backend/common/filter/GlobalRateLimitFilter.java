@@ -2,7 +2,9 @@ package com.harmony.backend.common.filter;
 
 import com.harmony.backend.common.config.GlobalRateLimitProperties;
 import com.harmony.backend.common.model.GlobalRateLimitSettings;
+import com.harmony.backend.common.service.RedisTokenBucketService;
 import com.harmony.backend.common.service.GlobalRateLimitSettingsService;
+import com.harmony.backend.common.util.JwtUtil;
 import com.harmony.backend.common.util.RequestUtils;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -10,14 +12,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Component
 @Slf4j
@@ -26,9 +26,10 @@ public class GlobalRateLimitFilter extends OncePerRequestFilter {
 
     private static final String KEY_PREFIX = "rate_limit:global:";
 
-    private final RedisTemplate<String, Object> redisTemplate;
     private final GlobalRateLimitProperties properties;
     private final GlobalRateLimitSettingsService settingsService;
+    private final JwtUtil jwtUtil;
+    private final RedisTokenBucketService tokenBucketService;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -56,7 +57,9 @@ public class GlobalRateLimitFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
-        if (Boolean.TRUE.equals(settings.getAdminBypass()) && RequestUtils.isAdmin()) {
+        String token = RequestUtils.extractToken(request);
+        Long currentUserId = resolveUserId(token);
+        if (Boolean.TRUE.equals(settings.getAdminBypass()) && isAdminRequest(token)) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -68,7 +71,7 @@ public class GlobalRateLimitFilter extends OncePerRequestFilter {
         }
 
         try {
-            if (!checkLimit(ip, RequestUtils.getCurrentUserId(), settings)) {
+            if (!checkLimit(ip, currentUserId, settings)) {
                 sendTooMany(response);
                 return;
             }
@@ -87,24 +90,30 @@ public class GlobalRateLimitFilter extends OncePerRequestFilter {
         int userLimit = settings.getUserLimit() != null ? settings.getUserLimit() : properties.getUserLimit();
 
         String ipKey = KEY_PREFIX + "ip:" + ip;
-        Long ipCount = redisTemplate.opsForValue().increment(ipKey);
-        if (ipCount != null && ipCount == 1) {
-            redisTemplate.expire(ipKey, window, TimeUnit.SECONDS);
-        }
-        if (ipCount != null && ipCount > ipLimit) {
+        if (!tokenBucketService.tryConsume(ipKey, ipLimit, window)) {
             return false;
         }
 
         if (userId != null) {
             String userKey = KEY_PREFIX + "user:" + userId;
-            Long userCount = redisTemplate.opsForValue().increment(userKey);
-            if (userCount != null && userCount == 1) {
-                redisTemplate.expire(userKey, window, TimeUnit.SECONDS);
-            }
-            return userCount == null || userCount <= userLimit;
+            return tokenBucketService.tryConsume(userKey, userLimit, window);
         }
 
         return true;
+    }
+
+    private Long resolveUserId(String token) {
+        if (!StringUtils.hasText(token)) {
+            return null;
+        }
+        return jwtUtil.getInternalUserIdFromToken(token, false);
+    }
+
+    private boolean isAdminRequest(String token) {
+        if (!StringUtils.hasText(token)) {
+            return false;
+        }
+        return "ADMIN".equalsIgnoreCase(jwtUtil.getRoleFromToken(token));
     }
 
     private boolean isWhitelistedPath(String path, GlobalRateLimitSettings settings) {

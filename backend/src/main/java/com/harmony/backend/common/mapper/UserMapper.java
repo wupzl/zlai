@@ -28,7 +28,7 @@ public interface UserMapper extends BaseMapper<User> {
     int lockUser(@Param("id") Long id, @Param("lockedUntil") LocalDateTime lockedUntil);
 
     @Update("UPDATE account SET token_balance = token_balance + #{delta} WHERE id = #{id}")
-    int updateTokenBalance(@Param("id") Long id, @Param("delta") int delta);
+    int updateTokenBalance(@Param("id") Long id, @Param("delta") long delta);
 
     @Update("UPDATE account SET ocr_balance = COALESCE(ocr_balance, #{defaultQuota}) + #{delta} WHERE id = #{id}")
     int updateOcrBalance(@Param("id") Long id, @Param("delta") int delta, @Param("defaultQuota") int defaultQuota);

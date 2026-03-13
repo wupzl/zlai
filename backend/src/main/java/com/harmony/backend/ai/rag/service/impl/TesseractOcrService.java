@@ -19,6 +19,7 @@ import java.io.ByteArrayInputStream;
 public class TesseractOcrService implements OcrService {
 
     private final RagOcrProperties properties;
+    private final ThreadLocal<Tesseract> tesseractHolder = ThreadLocal.withInitial(this::createTesseract);
 
     @Override
     public String extractText(byte[] imageBytes, String originalFilename, String contentType) {
@@ -34,14 +35,7 @@ public class TesseractOcrService implements OcrService {
                 return "";
             }
             BufferedImage processed = preprocess(image);
-            Tesseract tesseract = new Tesseract();
-            if (StringUtils.hasText(properties.getTessdataPath())) {
-                tesseract.setDatapath(properties.getTessdataPath());
-            }
-            if (StringUtils.hasText(properties.getLanguage())) {
-                tesseract.setLanguage(properties.getLanguage());
-            }
-            tesseract.setTessVariable("user_defined_dpi", "300");
+            Tesseract tesseract = tesseractHolder.get();
             String text = tesseract.doOCR(processed);
             return text == null ? "" : text.trim();
         } catch (TesseractException e) {
@@ -49,6 +43,18 @@ public class TesseractOcrService implements OcrService {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    private Tesseract createTesseract() {
+        Tesseract tesseract = new Tesseract();
+        if (StringUtils.hasText(properties.getTessdataPath())) {
+            tesseract.setDatapath(properties.getTessdataPath());
+        }
+        if (StringUtils.hasText(properties.getLanguage())) {
+            tesseract.setLanguage(properties.getLanguage());
+        }
+        tesseract.setTessVariable("user_defined_dpi", "300");
+        return tesseract;
     }
 
     private BufferedImage preprocess(BufferedImage src) {

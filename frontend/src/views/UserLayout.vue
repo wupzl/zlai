@@ -117,7 +117,7 @@
 </template>
 
 <script>
-import { apiRequest, clearAdminFlag, clearToken, clearUserInfo } from "../api";
+import { apiRequest, clearAuthState } from "../api";
 
 export default {
   name: "UserLayout",
@@ -322,9 +322,7 @@ export default {
       this.sidebarCollapsed = !this.sidebarCollapsed;
     },
     logout() {
-      clearToken();
-      clearUserInfo();
-      clearAdminFlag();
+      clearAuthState();
       this.$router.push("/auth/user");
     }
   }

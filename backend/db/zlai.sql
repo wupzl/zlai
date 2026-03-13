@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS `account` (
     `last_password_change` DATETIME DEFAULT NULL COMMENT 'Last password change',
     `last_login_time` DATETIME DEFAULT NULL COMMENT 'Last login time',
     `last_logout_time` DATETIME DEFAULT NULL COMMENT 'Last logout time',
-    `token_balance` INT DEFAULT 200000 COMMENT 'Token balance',
+    `token_balance` BIGINT DEFAULT 200000 COMMENT 'Token balance',
     `ocr_balance` INT DEFAULT 0 COMMENT 'OCR quota balance',
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at',
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS `message` (
     `content` LONGTEXT NOT NULL COMMENT 'Content',
     `tokens` INT DEFAULT 0 COMMENT 'Token count',
     `model` VARCHAR(64) DEFAULT NULL COMMENT 'Model',
-    `status` VARCHAR(32) NOT NULL DEFAULT 'SUCCESS' COMMENT 'Status',
+    `status` VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT 'Status: PENDING/STREAMING/SUCCESS/FAILED/INTERRUPTED',
     `is_deleted` TINYINT(1) DEFAULT 0 COMMENT 'Soft delete',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at',
@@ -129,7 +129,30 @@ CREATE TABLE IF NOT EXISTS `message` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Message';
 
 /* =========================================================
-   6) Token consumption
+   6) Chat request idempotency
+   ========================================================= */
+CREATE TABLE IF NOT EXISTS `chat_request_idempotency` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
+    `user_id` BIGINT NOT NULL COMMENT 'User ID',
+    `request_id` VARCHAR(80) NOT NULL COMMENT 'Idempotency request id',
+    `request_type` VARCHAR(32) NOT NULL COMMENT 'Request type',
+    `chat_id` VARCHAR(64) DEFAULT NULL COMMENT 'Chat ID',
+    `message_id` VARCHAR(64) DEFAULT NULL COMMENT 'User message ID',
+    `request_hash` VARCHAR(64) NOT NULL COMMENT 'Request hash',
+    `status` VARCHAR(16) NOT NULL COMMENT 'PENDING/DONE/FAILED',
+    `response_message_id` VARCHAR(64) DEFAULT NULL COMMENT 'Assistant message ID',
+    `response_content` LONGTEXT COMMENT 'Cached response for replay',
+    `error_message` VARCHAR(255) DEFAULT NULL COMMENT 'Error message',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_request` (`user_id`, `request_id`),
+    INDEX `idx_chat_type` (`chat_id`, `request_type`),
+    INDEX `idx_status_updated` (`status`, `updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Chat request idempotency';
+
+/* =========================================================
+   7) Token consumption
    ========================================================= */
 CREATE TABLE IF NOT EXISTS `token_consumption` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
@@ -147,7 +170,7 @@ CREATE TABLE IF NOT EXISTS `token_consumption` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Token consumption';
 
 /* =========================================================
-   7) System log
+   8) System log
    ========================================================= */
 CREATE TABLE IF NOT EXISTS `system_log` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
@@ -163,7 +186,7 @@ CREATE TABLE IF NOT EXISTS `system_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='System log';
 
 /* =========================================================
-   8) Model pricing
+   9) Model pricing
    ========================================================= */
 CREATE TABLE IF NOT EXISTS `model_pricing` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
@@ -175,7 +198,7 @@ CREATE TABLE IF NOT EXISTS `model_pricing` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Model pricing';
 
 /* =========================================================
-   9) Model pricing audit log
+   10) Model pricing audit log
    ========================================================= */
 CREATE TABLE IF NOT EXISTS `model_pricing_log` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
@@ -189,7 +212,7 @@ CREATE TABLE IF NOT EXISTS `model_pricing_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Model pricing audit log';
 
 /* =========================================================
-   10) App config
+   11) App config
    ========================================================= */
 CREATE TABLE IF NOT EXISTS `app_config` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',

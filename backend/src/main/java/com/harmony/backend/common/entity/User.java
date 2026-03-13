@@ -41,7 +41,7 @@ public class User {
     private LocalDateTime lastLogoutTime;
 
     @TableField("token_balance")
-    private Integer tokenBalance;
+    private Long tokenBalance;
 
     @TableField("ocr_balance")
     private Integer ocrBalance;
@@ -72,7 +72,7 @@ public class User {
             return;
         }
         if (this.tokenBalance == null) {
-            this.tokenBalance = 0;
+            this.tokenBalance = 0L;
         }
         if (this.tokenBalance < amount) {
             throw new IllegalStateException("Insufficient token balance");
@@ -89,7 +89,7 @@ public class User {
             return;
         }
         if (this.tokenBalance == null) {
-            this.tokenBalance = 0;
+            this.tokenBalance = 0L;
         }
         this.tokenBalance += amount;
     }

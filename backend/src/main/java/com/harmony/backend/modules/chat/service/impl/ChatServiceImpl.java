@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.harmony.backend.common.entity.Agent;
+import com.harmony.backend.common.entity.ChatRequestIdempotency;
 import com.harmony.backend.common.entity.Gpt;
 import com.harmony.backend.common.entity.Message;
 import com.harmony.backend.common.entity.Session;
@@ -27,23 +28,31 @@ import com.harmony.backend.common.mapper.UserMapper;
 import com.harmony.backend.common.util.TokenCounter;
 import com.harmony.backend.common.mapper.MessageMapper;
 import com.harmony.backend.common.mapper.SessionMapper;
+import com.harmony.backend.common.mapper.ChatRequestIdempotencyMapper;
 import com.harmony.backend.modules.chat.adapter.LlmAdapter;
 import com.harmony.backend.modules.chat.adapter.LlmAdapterRegistry;
 import com.harmony.backend.modules.chat.adapter.LlmMessage;
 import com.harmony.backend.modules.chat.config.BillingProperties;
+import com.harmony.backend.modules.chat.prompt.ChatPromptService;
 import com.harmony.backend.modules.chat.service.ChatService;
+import com.harmony.backend.modules.chat.support.ChatBloomFilterService;
+import com.harmony.backend.modules.chat.support.IdempotencyStatus;
+import com.harmony.backend.modules.chat.support.MessageStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -52,6 +61,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 @Service
 @Slf4j
@@ -65,17 +77,23 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
     private final ApplicationEventPublisher eventPublisher;
     private final TokenConsumptionMapper tokenConsumptionMapper;
     private final UserMapper userMapper;
+    private final ChatRequestIdempotencyMapper chatRequestIdempotencyMapper;
     private final BillingProperties billingProperties;
     private final ObjectMapper objectMapper;
     private final ToolExecutor toolExecutor;
     private final AgentToolRegistry toolRegistry;
     private final RagService ragService;
     private final MultiAgentOrchestrator multiAgentOrchestrator;
+    private final ChatBloomFilterService bloomFilterService;
+    private final ChatPromptService chatPromptService;
     @Value("${app.chat.context.window-messages:20}")
     private int contextWindowMessages;
 
     @Value("${app.chat.context.warn-messages:200}")
     private int contextWarnMessages;
+
+    @Value("${app.chat.idempotency.regenerate-dedup-seconds:3}")
+    private int regenerateDedupSeconds;
 
     @Override
     public Mono<String> createNewSessionAndGetChatId(Long userId, String prompt, String model, String toolModel, String gptId,
@@ -87,8 +105,8 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         Gpt gpt = resolveGptForSession(userId, gptId);
         Agent agent = resolveAgentForSession(userId, agentId);
         String finalModel = resolveModelForNewSession(model, gpt, agent);
-        String title = buildTitleWithLlm(prompt, finalModel);
-        String systemPrompt = buildSystemPrompt(gpt, agent);
+        String title = chatPromptService.generateSessionTitle(prompt);
+        String systemPrompt = chatPromptService.buildSystemPrompt(gpt, agent);
 
         Session session = Session.builder()
                 .chatId(chatId)
@@ -113,8 +131,16 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
     @Override
     @Transactional
     public Flux<String> chat(Long userId, String chatId, String prompt, String parentMessageId,
-                             String messageId, String gptId, String agentId, String model, String toolModel,
+                             String messageId, String requestId, String gptId, String agentId, String model, String toolModel,
                              Boolean useRag, String ragQuery, Integer ragTopK) {
+        String requestHash = hashForIdempotency("CHAT_STREAM", chatId, prompt, parentMessageId, messageId,
+                gptId, agentId, model, toolModel, useRag, ragQuery, ragTopK);
+        IdempotencyGate idempotency = acquireIdempotency(userId, requestId, "CHAT_STREAM", chatId, messageId, requestHash);
+        if (idempotency.replayResponse != null) {
+            return Flux.just(idempotency.replayResponse);
+        }
+        try {
+
         Session session = getSession(chatId);
         applyToolModelUpdate(session, toolModel);
         String finalModel = resolveModelForSession(session, model);
@@ -122,7 +148,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         validateAgentMatch(session, agentId);
         String systemPrompt = resolveSystemPrompt(session);
         String ragContext = resolveRagContext(session, userId, useRag, ragQuery, ragTopK, prompt);
-        String mergedPrompt = mergeSystemPrompt(systemPrompt, ragContext);
+        String mergedPrompt = chatPromptService.mergeSystemPrompt(systemPrompt, ragContext);
         Agent sessionAgent = resolveAgentEntity(session);
         boolean multiAgentEnabled = isMultiAgentEnabled(sessionAgent);
         boolean bufferToolStream = shouldBufferToolStream(sessionAgent);
@@ -138,21 +164,19 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         int maxCompletion = resolveMaxCompletionTokens(finalModel);
         ensureBalance(userId, estimateBilledTokens(promptTokens + maxCompletion, multiplier));
 
-        Message userMessage = Message.builder()
-                .messageId(userMessageId)
-                .chatId(chatId)
-                .parentMessageId(parentMessageId)
-                .role("user")
-                .content(prompt)
-                .model(finalModel)
-                .tokens(promptTokens)
-                .status("SUCCESS")
-                .build();
-        baseMapper.insert(userMessage);
-        updateSessionTitleIfNeeded(session, prompt, finalModel);
+        UserMessageResolution userResolution = resolveOrCreateUserMessage(chatId, userMessageId,
+                parentMessageId, prompt, finalModel, promptTokens);
+        if (!userResolution.reused) {
+            updateSessionStats(chatId, 1, userMessageId);
+            updateSessionTitleIfNeeded(session, prompt, finalModel);
+        } else if (userResolution.latestAssistant != null) {
+            String replay = userResolution.latestAssistant.getContent() == null ? "" : userResolution.latestAssistant.getContent();
+            markIdempotencyDone(idempotency.record, replay, chatId, userMessageId, userResolution.latestAssistant.getMessageId());
+            return Flux.just(replay);
+        }
 
         if (isRagRequired(session, useRag) && (ragContext == null || ragContext.isBlank())) {
-            String content = ragNoContextMessageV4();
+            String content = chatPromptService.ragNoContextMessage();
             String assistantMessageId = UUID.randomUUID().toString();
             Message assistantMessage = Message.builder()
                     .messageId(assistantMessageId)
@@ -162,11 +186,13 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                     .content(content)
                     .model(finalModel)
                     .tokens(estimateCompletionTokens(content))
-                    .status("SUCCESS")
+                    .status(MessageStatus.SUCCESS)
                     .build();
             baseMapper.insert(assistantMessage);
-            updateSessionStats(chatId, 2, assistantMessageId);
+            bloomFilterService.putMessage(assistantMessageId);
+            updateSessionStats(chatId, 1, assistantMessageId);
             eventPublisher.publishEvent(new ChatMessageEvent(this, chatId));
+            markIdempotencyDone(idempotency.record, content, chatId, userMessageId, assistantMessageId);
             return Flux.just(content);
         }
 
@@ -179,6 +205,8 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         AtomicReference<Boolean> toolCallDetected = new AtomicReference<>(false);
         AtomicReference<Boolean> toolSuspected = new AtomicReference<>(false);
         String assistantMessageId = UUID.randomUUID().toString();
+        createAssistantPlaceholder(chatId, userMessageId, assistantMessageId, finalModel);
+        updateSessionStats(chatId, 1, assistantMessageId);
 
         Flux<String> sourceStream;
         MultiAgentOrchestrator.ToolUsageRecorder usageRecorder = null;
@@ -200,9 +228,14 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         }
 
         Flux<String> stream = Flux.create(sink -> {
-            sourceStream.subscribe(
+            AtomicBoolean finalized = new AtomicBoolean(false);
+            AtomicBoolean streamingMarked = new AtomicBoolean(false);
+            Disposable disposable = sourceStream.subscribe(
                     chunk -> {
                         assistantBuffer.get().append(chunk);
+                        if (streamingMarked.compareAndSet(false, true)) {
+                            markAssistantStreaming(assistantMessageId);
+                        }
                         String current = assistantBuffer.get().toString().trim();
                         if (!toolSuspected.get() && current.startsWith("{")) {
                             toolSuspected.set(true);
@@ -214,51 +247,84 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                             sink.next(chunk);
                         }
                     },
-                    sink::error,
+                    error -> Mono.fromRunnable(() -> {
+                                String partialContent = assistantBuffer.get().toString();
+                                markAssistantFailed(assistantMessageId, partialContent, finalModel, trimError(error.getMessage()));
+                                markIdempotencyFailed(idempotency.record, error.getMessage());
+                            })
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .doFinally(signal -> {
+                                if (finalized.compareAndSet(false, true)) {
+                                    sink.error(error);
+                                }
+                            })
+                            .subscribe(),
                     () -> {
                         Mono.fromRunnable(() -> {
                                     String assistantContent = assistantBuffer.get().toString();
                                     ToolHandlingResult handled = handleToolCallIfNeeded(session, messages, assistantContent,
                                             finalModel, assistantMessageId);
                                     String finalContent = handled.content != null ? handled.content : assistantContent;
+                                    markAssistantSucceeded(assistantMessageId, finalContent, finalModel);
                                     if (bufferToolStream || toolSuspected.get() || toolCallDetected.get()) {
                                         emitChunked(sink, finalContent);
                                     }
                                     int completionTokens = estimateCompletionTokens(finalContent);
-                                    Message assistantMessage = Message.builder()
-                                            .messageId(assistantMessageId)
-                                            .chatId(chatId)
-                                            .parentMessageId(userMessageId)
-                                            .role("assistant")
-                                            .content(finalContent)
-                                            .model(finalModel)
-                                            .tokens(completionTokens)
-                                            .status("SUCCESS")
-                                            .build();
-                                    baseMapper.insert(assistantMessage);
-                                    updateSessionStats(chatId, 2, assistantMessageId);
                                     recordConsumption(userId, chatId, assistantMessageId, finalModel, promptTokens, completionTokens);
                                     eventPublisher.publishEvent(new ChatMessageEvent(this, chatId));
+                                    String output = warning != null ? warning + finalContent : finalContent;
+                                    markIdempotencyDone(idempotency.record, output, chatId, userMessageId, assistantMessageId);
                                 })
                                 .subscribeOn(Schedulers.boundedElastic())
-                                .doOnError(sink::error)
-                                .doOnSuccess(v -> sink.complete())
+                                .doOnError(error -> {
+                                    markAssistantFailed(assistantMessageId, assistantBuffer.get().toString(), finalModel, trimError(error.getMessage()));
+                                    markIdempotencyFailed(idempotency.record, error.getMessage());
+                                    if (finalized.compareAndSet(false, true)) {
+                                        sink.error(error);
+                                    }
+                                })
+                                .doOnSuccess(v -> {
+                                    if (finalized.compareAndSet(false, true)) {
+                                        sink.complete();
+                                    }
+                                })
                                 .subscribe();
                     }
             );
+            sink.onCancel(() -> {
+                disposable.dispose();
+                if (finalized.compareAndSet(false, true)) {
+                    markAssistantInterrupted(assistantMessageId, assistantBuffer.get().toString(), finalModel);
+                    markIdempotencyInterrupted(idempotency.record, "interrupted by client");
+                }
+            });
         });
 
-        if (warning != null) {
-            return Flux.just(warning).concatWith(stream);
+            if (warning != null) {
+                return Flux.just(warning).concatWith(stream);
+            }
+            return stream;
+        } catch (Exception e) {
+            markIdempotencyFailed(idempotency.record, e.getMessage());
+            throw e;
         }
-        return stream;
     }
 
     @Override
     @Transactional
     public Flux<String> regenerateAssistant(Long userId, String chatId, String assistantMessageId,
+                                            String requestId,
                                             String gptId, String agentId, String model, String toolModel,
                                             Boolean useRag, String ragQuery, Integer ragTopK) {
+        String requestHash = hashForIdempotency("REGENERATE_STREAM", chatId, assistantMessageId,
+                gptId, agentId, model, toolModel, useRag, ragQuery, ragTopK);
+        IdempotencyGate idempotency = acquireIdempotency(userId, requestId, "REGENERATE_STREAM",
+                chatId, assistantMessageId, requestHash);
+        if (idempotency.replayResponse != null) {
+            return Flux.just(idempotency.replayResponse);
+        }
+        try {
+
         Session session = getSession(chatId);
         applyToolModelUpdate(session, toolModel);
         String finalModel = resolveModelForSession(session, model);
@@ -291,7 +357,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         String parentMessageId = parentUser.getParentMessageId();
         String systemPrompt = resolveSystemPrompt(session);
         String ragContext = resolveRagContext(session, userId, useRag, ragQuery, ragTopK, prompt);
-        String mergedPrompt = mergeSystemPrompt(systemPrompt, ragContext);
+        String mergedPrompt = chatPromptService.mergeSystemPrompt(systemPrompt, ragContext);
         Agent sessionAgent = resolveAgentEntity(session);
         boolean multiAgentEnabled = isMultiAgentEnabled(sessionAgent);
         boolean bufferToolStream = shouldBufferToolStream(sessionAgent);
@@ -301,22 +367,15 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         int maxCompletion = resolveMaxCompletionTokens(finalModel);
         ensureBalance(userId, estimateBilledTokens(promptTokens + maxCompletion, multiplier));
 
+        String newAssistantMessageId = UUID.randomUUID().toString();
+        createAssistantPlaceholder(chatId, parentUser.getMessageId(), newAssistantMessageId, finalModel);
+        updateSessionStats(chatId, 1, newAssistantMessageId);
+
         if (isRagRequired(session, useRag) && (ragContext == null || ragContext.isBlank())) {
-            String content = ragNoContextMessageV4();
-            String newAssistantMessageId = UUID.randomUUID().toString();
-            Message assistantMessage = Message.builder()
-                    .messageId(newAssistantMessageId)
-                    .chatId(chatId)
-                    .parentMessageId(parentUser.getMessageId())
-                    .role("assistant")
-                    .content(content)
-                    .model(finalModel)
-                    .tokens(estimateCompletionTokens(content))
-                    .status("SUCCESS")
-                    .build();
-            baseMapper.insert(assistantMessage);
-            updateSessionStats(chatId, 1, newAssistantMessageId);
+            String content = chatPromptService.ragNoContextMessage();
+            markAssistantSucceeded(newAssistantMessageId, content, finalModel);
             eventPublisher.publishEvent(new ChatMessageEvent(this, chatId));
+            markIdempotencyDone(idempotency.record, content, chatId, parentUser.getMessageId(), newAssistantMessageId);
             return Flux.just(content);
         }
 
@@ -327,7 +386,6 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         AtomicReference<StringBuilder> assistantBuffer = new AtomicReference<>(new StringBuilder());
         AtomicReference<Boolean> toolCallDetected = new AtomicReference<>(false);
         AtomicReference<Boolean> toolSuspected = new AtomicReference<>(false);
-        String newAssistantMessageId = UUID.randomUUID().toString();
         String parentUserMessageId = parentUser.getMessageId();
 
         Flux<String> sourceStream;
@@ -347,9 +405,14 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         }
 
         Flux<String> stream = Flux.create(sink -> {
-            sourceStream.subscribe(
+            AtomicBoolean finalized = new AtomicBoolean(false);
+            AtomicBoolean streamingMarked = new AtomicBoolean(false);
+            Disposable disposable = sourceStream.subscribe(
                     chunk -> {
                         assistantBuffer.get().append(chunk);
+                        if (streamingMarked.compareAndSet(false, true)) {
+                            markAssistantStreaming(newAssistantMessageId);
+                        }
                         String current = assistantBuffer.get().toString().trim();
                         if (!toolSuspected.get() && current.startsWith("{")) {
                             toolSuspected.set(true);
@@ -361,168 +424,178 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                             sink.next(chunk);
                         }
                     },
-                    sink::error,
+                    error -> Mono.fromRunnable(() -> {
+                                String partialContent = assistantBuffer.get().toString();
+                                markAssistantFailed(newAssistantMessageId, partialContent, finalModel, trimError(error.getMessage()));
+                                markIdempotencyFailed(idempotency.record, error.getMessage());
+                            })
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .doFinally(signal -> {
+                                if (finalized.compareAndSet(false, true)) {
+                                    sink.error(error);
+                                }
+                            })
+                            .subscribe(),
                     () -> {
                         Mono.fromRunnable(() -> {
                                     String assistantContent = assistantBuffer.get().toString();
                                     ToolHandlingResult handled = handleToolCallIfNeeded(session, messages, assistantContent,
                                             finalModel, newAssistantMessageId);
                                     String finalContent = handled.content != null ? handled.content : assistantContent;
+                                    markAssistantSucceeded(newAssistantMessageId, finalContent, finalModel);
                                     if (bufferToolStream || toolSuspected.get() || toolCallDetected.get()) {
                                         emitChunked(sink, finalContent);
                                     }
                                     int completionTokens = estimateCompletionTokens(finalContent);
-                                    Message assistantMessage = Message.builder()
-                                            .messageId(newAssistantMessageId)
-                                            .chatId(chatId)
-                                            .parentMessageId(parentUserMessageId)
-                                            .role("assistant")
-                                            .content(finalContent)
-                                            .model(finalModel)
-                                            .tokens(completionTokens)
-                                            .status("SUCCESS")
-                                            .build();
-                                    baseMapper.insert(assistantMessage);
-                                    updateSessionStats(chatId, 1, newAssistantMessageId);
                                     recordConsumption(userId, chatId, newAssistantMessageId, finalModel, promptTokens, completionTokens);
                                     eventPublisher.publishEvent(new ChatMessageEvent(this, chatId));
+                                    String output = warning != null ? warning + finalContent : finalContent;
+                                    markIdempotencyDone(idempotency.record, output, chatId, parentUserMessageId, newAssistantMessageId);
                                 })
                                 .subscribeOn(Schedulers.boundedElastic())
-                                .doOnError(sink::error)
-                                .doOnSuccess(v -> sink.complete())
+                                .doOnError(error -> {
+                                    markAssistantFailed(newAssistantMessageId, assistantBuffer.get().toString(), finalModel, trimError(error.getMessage()));
+                                    markIdempotencyFailed(idempotency.record, error.getMessage());
+                                    if (finalized.compareAndSet(false, true)) {
+                                        sink.error(error);
+                                    }
+                                })
+                                .doOnSuccess(v -> {
+                                    if (finalized.compareAndSet(false, true)) {
+                                        sink.complete();
+                                    }
+                                })
                                 .subscribe();
                     }
             );
+            sink.onCancel(() -> {
+                disposable.dispose();
+                if (finalized.compareAndSet(false, true)) {
+                    markAssistantInterrupted(newAssistantMessageId, assistantBuffer.get().toString(), finalModel);
+                    markIdempotencyInterrupted(idempotency.record, "interrupted by client");
+                }
+            });
         });
 
-        if (warning != null) {
-            return Flux.just(warning).concatWith(stream);
+            if (warning != null) {
+                return Flux.just(warning).concatWith(stream);
+            }
+            return stream;
+        } catch (Exception e) {
+            markIdempotencyFailed(idempotency.record, e.getMessage());
+            throw e;
         }
-        return stream;
     }
 
     @Override
     @Transactional
-    public Object sendMessage(Long userId, String chatId, String prompt, String parentMessageId, String messageId,
+    public Object sendMessage(Long userId, String chatId, String prompt, String parentMessageId, String messageId, String requestId,
                               String gptId, String agentId, String model, String toolModel, Boolean useRag, String ragQuery, Integer ragTopK) {
-        Session session = getSession(chatId);
-        applyToolModelUpdate(session, toolModel);
-        String finalModel = resolveModelForSession(session, model);
-        validateGptMatch(session, gptId);
-        validateAgentMatch(session, agentId);
-        String systemPrompt = resolveSystemPrompt(session);
-        String ragContext = resolveRagContext(session, userId, useRag, ragQuery, ragTopK, prompt);
-        String mergedPrompt = mergeSystemPrompt(systemPrompt, ragContext);
-        Agent sessionAgent = resolveAgentEntity(session);
-        boolean multiAgentEnabled = isMultiAgentEnabled(sessionAgent);
-        String userMessageId = messageId != null && !messageId.isBlank()
-                ? messageId
-                : UUID.randomUUID().toString();
-
-        int promptTokens = estimatePromptTokens(prompt);
-        double multiplier = billingProperties.getMultiplier(finalModel);
-        int maxCompletion = resolveMaxCompletionTokens(finalModel);
-        ensureBalance(userId, estimateBilledTokens(promptTokens + maxCompletion, multiplier));
-
-        Message userMessage = Message.builder()
-                .messageId(userMessageId)
-                .chatId(chatId)
-                .parentMessageId(parentMessageId)
-                .role("user")
-                .content(prompt)
-                .model(finalModel)
-                .tokens(promptTokens)
-                .status("SUCCESS")
-                .build();
-        baseMapper.insert(userMessage);
-        updateSessionTitleIfNeeded(session, prompt, finalModel);
-
-        if (isRagRequired(session, useRag) && (ragContext == null || ragContext.isBlank())) {
-            String content = ragNoContextMessageV4();
-            Message assistantMessage = Message.builder()
-                    .messageId(UUID.randomUUID().toString())
-                    .chatId(chatId)
-                    .parentMessageId(userMessageId)
-                    .role("assistant")
-                    .content(content)
-                    .model(finalModel)
-                    .tokens(estimateCompletionTokens(content))
-                    .status("SUCCESS")
-                    .build();
-            baseMapper.insert(assistantMessage);
-            updateSessionStats(chatId, 2, assistantMessage.getMessageId());
-            eventPublisher.publishEvent(new ChatMessageEvent(this, chatId));
-            return content;
+        String requestHash = hashForIdempotency("CHAT_SYNC", chatId, prompt, parentMessageId, messageId,
+                gptId, agentId, model, toolModel, useRag, ragQuery, ragTopK);
+        IdempotencyGate idempotency = acquireIdempotency(userId, requestId, "CHAT_SYNC", chatId, messageId, requestHash);
+        if (idempotency.replayResponse != null) {
+            return idempotency.replayResponse;
         }
 
-        LlmAdapter adapter = adapterRegistry.getAdapter(finalModel);
-        List<LlmMessage> messages = buildContextMessages(chatId, parentMessageId, prompt, finalModel, mergedPrompt);
-        String warning = buildLargeSessionWarning(session);
-        String assistantContent;
-        MultiAgentOrchestrator.ToolUsageRecorder usageRecorder = null;
-        if (multiAgentEnabled) {
-            List<TeamAgentRuntime> teamAgents = resolveTeamAgents(sessionAgent, userId);
-            if (!teamAgents.isEmpty()) {
-                String assistantMessageId = UUID.randomUUID().toString();
-                usageRecorder = (toolModelName, pTokens, cTokens) ->
-                        recordToolConsumption(session, assistantMessageId, toolModelName, pTokens, cTokens);
-                assistantContent = multiAgentOrchestrator.runTeam(messages, finalModel, sessionAgent, teamAgents,
-                        adapterRegistry, toolExecutor, usageRecorder);
-                ToolHandlingResult handled = handleToolCallIfNeeded(session, messages, assistantContent, finalModel,
-                        assistantMessageId);
-                String finalContent = handled.content != null ? handled.content : assistantContent;
-                int completionTokens = estimateCompletionTokens(finalContent);
+        String pendingAssistantMessageId = null;
+        try {
+            Session session = getSession(chatId);
+            applyToolModelUpdate(session, toolModel);
+            String finalModel = resolveModelForSession(session, model);
+            validateGptMatch(session, gptId);
+            validateAgentMatch(session, agentId);
+            String systemPrompt = resolveSystemPrompt(session);
+            String ragContext = resolveRagContext(session, userId, useRag, ragQuery, ragTopK, prompt);
+            String mergedPrompt = chatPromptService.mergeSystemPrompt(systemPrompt, ragContext);
+            Agent sessionAgent = resolveAgentEntity(session);
+            boolean multiAgentEnabled = isMultiAgentEnabled(sessionAgent);
+            String userMessageId = messageId != null && !messageId.isBlank()
+                    ? messageId
+                    : UUID.randomUUID().toString();
 
-                Message assistantMessage = Message.builder()
-                        .messageId(assistantMessageId)
-                        .chatId(chatId)
-                        .parentMessageId(userMessageId)
-                        .role("assistant")
-                        .content(finalContent)
-                        .model(finalModel)
-                        .tokens(completionTokens)
-                        .status("SUCCESS")
-                        .build();
-                baseMapper.insert(assistantMessage);
-                updateSessionStats(chatId, 2, assistantMessage.getMessageId());
-                recordConsumption(userId, chatId, assistantMessage.getMessageId(), finalModel, promptTokens, completionTokens);
-                eventPublisher.publishEvent(new ChatMessageEvent(this, chatId));
+            int promptTokens = estimatePromptTokens(prompt);
+            double multiplier = billingProperties.getMultiplier(finalModel);
+            int maxCompletion = resolveMaxCompletionTokens(finalModel);
+            ensureBalance(userId, estimateBilledTokens(promptTokens + maxCompletion, multiplier));
 
-                if (warning != null) {
-                    return warning + finalContent;
-                }
-                return finalContent;
-            } else {
-                assistantContent = multiAgentOrchestrator.run(messages, finalModel, adapter);
+            UserMessageResolution userResolution = resolveOrCreateUserMessage(chatId, userMessageId,
+                    parentMessageId, prompt, finalModel, promptTokens);
+            if (!userResolution.reused) {
+                updateSessionStats(chatId, 1, userMessageId);
+                updateSessionTitleIfNeeded(session, prompt, finalModel);
+            } else if (userResolution.latestAssistant != null) {
+                String replay = userResolution.latestAssistant.getContent() == null ? "" : userResolution.latestAssistant.getContent();
+                markIdempotencyDone(idempotency.record, replay, chatId, userMessageId, userResolution.latestAssistant.getMessageId());
+                return replay;
             }
-        } else {
-            assistantContent = adapter.chat(messages, finalModel);
-        }
-        String assistantMessageId = UUID.randomUUID().toString();
-        ToolHandlingResult handled = handleToolCallIfNeeded(session, messages, assistantContent, finalModel,
-                assistantMessageId);
-        String finalContent = handled.content != null ? handled.content : assistantContent;
-        int completionTokens = estimateCompletionTokens(finalContent);
 
-        Message assistantMessage = Message.builder()
-                .messageId(assistantMessageId)
-                .chatId(chatId)
-                .parentMessageId(userMessageId)
-                .role("assistant")
-                .content(finalContent)
-                .model(finalModel)
-                .tokens(completionTokens)
-                .status("SUCCESS")
-                .build();
-        baseMapper.insert(assistantMessage);
-        updateSessionStats(chatId, 2, assistantMessage.getMessageId());
-        recordConsumption(userId, chatId, assistantMessage.getMessageId(), finalModel, promptTokens, completionTokens);
-        eventPublisher.publishEvent(new ChatMessageEvent(this, chatId));
+            if (isRagRequired(session, useRag) && (ragContext == null || ragContext.isBlank())) {
+                String content = chatPromptService.ragNoContextMessage();
+                String assistantMessageId = UUID.randomUUID().toString();
+                pendingAssistantMessageId = assistantMessageId;
+                createAssistantPlaceholder(chatId, userMessageId, assistantMessageId, finalModel);
+                updateSessionStats(chatId, 1, assistantMessageId);
+                markAssistantSucceeded(assistantMessageId, content, finalModel);
+                eventPublisher.publishEvent(new ChatMessageEvent(this, chatId));
+                markIdempotencyDone(idempotency.record, content, chatId, userMessageId, assistantMessageId);
+                return content;
+            }
 
-        if (warning != null) {
-            return warning + finalContent;
+            LlmAdapter adapter = adapterRegistry.getAdapter(finalModel);
+            List<LlmMessage> messages = buildContextMessages(chatId, parentMessageId, prompt, finalModel, mergedPrompt);
+            String warning = buildLargeSessionWarning(session);
+            String assistantContent;
+            MultiAgentOrchestrator.ToolUsageRecorder usageRecorder = null;
+            if (multiAgentEnabled) {
+                List<TeamAgentRuntime> teamAgents = resolveTeamAgents(sessionAgent, userId);
+                if (!teamAgents.isEmpty()) {
+                    String assistantMessageId = UUID.randomUUID().toString();
+                    pendingAssistantMessageId = assistantMessageId;
+                    createAssistantPlaceholder(chatId, userMessageId, assistantMessageId, finalModel);
+                    updateSessionStats(chatId, 1, assistantMessageId);
+                    usageRecorder = (toolModelName, pTokens, cTokens) ->
+                            recordToolConsumption(session, assistantMessageId, toolModelName, pTokens, cTokens);
+                    assistantContent = multiAgentOrchestrator.runTeam(messages, finalModel, sessionAgent, teamAgents,
+                            adapterRegistry, toolExecutor, usageRecorder);
+                    ToolHandlingResult handled = handleToolCallIfNeeded(session, messages, assistantContent, finalModel,
+                            assistantMessageId);
+                    String finalContent = handled.content != null ? handled.content : assistantContent;
+                    int completionTokens = estimateCompletionTokens(finalContent);
+                    markAssistantSucceeded(assistantMessageId, finalContent, finalModel);
+                    recordConsumption(userId, chatId, assistantMessageId, finalModel, promptTokens, completionTokens);
+                    eventPublisher.publishEvent(new ChatMessageEvent(this, chatId));
+                    String output = warning != null ? warning + finalContent : finalContent;
+                    markIdempotencyDone(idempotency.record, output, chatId, userMessageId, assistantMessageId);
+                    return output;
+                } else {
+                    assistantContent = multiAgentOrchestrator.run(messages, finalModel, adapter);
+                }
+            } else {
+                assistantContent = adapter.chat(messages, finalModel);
+            }
+            String assistantMessageId = UUID.randomUUID().toString();
+            pendingAssistantMessageId = assistantMessageId;
+            createAssistantPlaceholder(chatId, userMessageId, assistantMessageId, finalModel);
+            updateSessionStats(chatId, 1, assistantMessageId);
+            ToolHandlingResult handled = handleToolCallIfNeeded(session, messages, assistantContent, finalModel,
+                    assistantMessageId);
+            String finalContent = handled.content != null ? handled.content : assistantContent;
+            int completionTokens = estimateCompletionTokens(finalContent);
+            markAssistantSucceeded(assistantMessageId, finalContent, finalModel);
+            recordConsumption(userId, chatId, assistantMessageId, finalModel, promptTokens, completionTokens);
+            eventPublisher.publishEvent(new ChatMessageEvent(this, chatId));
+
+            String output = warning != null ? warning + finalContent : finalContent;
+            markIdempotencyDone(idempotency.record, output, chatId, userMessageId, assistantMessageId);
+            return output;
+        } catch (Exception e) {
+            if (pendingAssistantMessageId != null) {
+                markAssistantFailed(pendingAssistantMessageId, "", null, trimError(e.getMessage()));
+            }
+            markIdempotencyFailed(idempotency.record, e.getMessage());
+            throw e;
         }
-        return finalContent;
     }
 
     @Override
@@ -548,6 +621,284 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         return payload;
     }
 
+    private IdempotencyGate acquireIdempotency(Long userId,
+                                               String requestId,
+                                               String requestType,
+                                               String chatId,
+                                               String messageId,
+                                               String requestHash) {
+        if (requestId == null || requestId.isBlank()) {
+            throw new BusinessException(400, "requestId is required");
+        }
+        if (userId == null) {
+            throw new BusinessException(401, "Unauthorized");
+        }
+        ChatRequestIdempotency record = chatRequestIdempotencyMapper.selectOne(
+                new LambdaQueryWrapper<ChatRequestIdempotency>()
+                        .eq(ChatRequestIdempotency::getUserId, userId)
+                        .eq(ChatRequestIdempotency::getRequestId, requestId)
+                        .last("limit 1"));
+        if (record == null) {
+            if (isRegenerateRequestType(requestType)) {
+                IdempotencyGate merged = tryMergeRecentRegenerate(userId, requestType, requestHash);
+                if (merged != null) {
+                    return merged;
+                }
+            }
+            if (bloomFilterService.mightContainRequest(userId, requestId)) {
+                record = chatRequestIdempotencyMapper.selectOne(
+                        new LambdaQueryWrapper<ChatRequestIdempotency>()
+                                .eq(ChatRequestIdempotency::getUserId, userId)
+                                .eq(ChatRequestIdempotency::getRequestId, requestId)
+                                .last("limit 1"));
+            } else {
+                ChatRequestIdempotency toInsert = ChatRequestIdempotency.builder()
+                        .userId(userId)
+                        .requestId(requestId)
+                        .requestType(requestType)
+                        .chatId(chatId)
+                        .messageId(messageId)
+                        .requestHash(requestHash)
+                        .status(IdempotencyStatus.PENDING)
+                        .build();
+                try {
+                    chatRequestIdempotencyMapper.insert(toInsert);
+                    bloomFilterService.putRequest(userId, requestId);
+                    return new IdempotencyGate(toInsert, null);
+                } catch (DuplicateKeyException ignored) {
+                    record = chatRequestIdempotencyMapper.selectOne(
+                            new LambdaQueryWrapper<ChatRequestIdempotency>()
+                                    .eq(ChatRequestIdempotency::getUserId, userId)
+                                    .eq(ChatRequestIdempotency::getRequestId, requestId)
+                                    .last("limit 1"));
+                }
+            }
+        }
+        if (record == null) {
+            throw new BusinessException(409, "Duplicate request, please retry");
+        }
+        bloomFilterService.putRequest(userId, requestId);
+        if (!safeEquals(record.getRequestHash(), requestHash)) {
+            throw new BusinessException(409, "requestId has been used with different payload");
+        }
+        if (IdempotencyStatus.DONE.equalsIgnoreCase(record.getStatus())) {
+            return new IdempotencyGate(record, record.getResponseContent() == null ? "" : record.getResponseContent());
+        }
+        if (IdempotencyStatus.FAILED.equalsIgnoreCase(record.getStatus())
+                || IdempotencyStatus.INTERRUPTED.equalsIgnoreCase(record.getStatus())) {
+            ChatRequestIdempotency update = new ChatRequestIdempotency();
+            update.setId(record.getId());
+            update.setStatus(IdempotencyStatus.PENDING);
+            update.setErrorMessage(null);
+            chatRequestIdempotencyMapper.updateById(update);
+            record.setStatus(IdempotencyStatus.PENDING);
+            return new IdempotencyGate(record, null);
+        }
+        throw new BusinessException(409, "Request is processing");
+    }
+
+    private boolean isRegenerateRequestType(String requestType) {
+        if (requestType == null) {
+            return false;
+        }
+        return requestType.startsWith("REGENERATE");
+    }
+
+    private IdempotencyGate tryMergeRecentRegenerate(Long userId, String requestType, String requestHash) {
+        if (userId == null || requestHash == null || requestHash.isBlank()) {
+            return null;
+        }
+        int window = Math.max(1, regenerateDedupSeconds);
+        ChatRequestIdempotency latest = chatRequestIdempotencyMapper.selectOne(
+                new LambdaQueryWrapper<ChatRequestIdempotency>()
+                        .eq(ChatRequestIdempotency::getUserId, userId)
+                        .eq(ChatRequestIdempotency::getRequestType, requestType)
+                        .eq(ChatRequestIdempotency::getRequestHash, requestHash)
+                        .orderByDesc(ChatRequestIdempotency::getId)
+                        .last("limit 1"));
+        if (latest == null || latest.getCreatedAt() == null) {
+            return null;
+        }
+        Duration age = Duration.between(latest.getCreatedAt(), LocalDateTime.now());
+        if (age.isNegative() || age.getSeconds() > window) {
+            return null;
+        }
+        if (IdempotencyStatus.DONE.equalsIgnoreCase(latest.getStatus())) {
+            return new IdempotencyGate(latest, latest.getResponseContent() == null ? "" : latest.getResponseContent());
+        }
+        if (IdempotencyStatus.PENDING.equalsIgnoreCase(latest.getStatus())) {
+            throw new BusinessException(409, "Request is processing");
+        }
+        return null;
+    }
+
+    private void markIdempotencyDone(ChatRequestIdempotency record,
+                                     String responseContent,
+                                     String chatId,
+                                     String messageId,
+                                     String responseMessageId) {
+        if (record == null || record.getId() == null) {
+            return;
+        }
+        ChatRequestIdempotency update = new ChatRequestIdempotency();
+        update.setId(record.getId());
+        update.setStatus(IdempotencyStatus.DONE);
+        update.setChatId(chatId);
+        update.setMessageId(messageId);
+        update.setResponseMessageId(responseMessageId);
+        update.setResponseContent(responseContent == null ? "" : responseContent);
+        update.setErrorMessage(null);
+        chatRequestIdempotencyMapper.updateById(update);
+    }
+
+    private void markIdempotencyFailed(ChatRequestIdempotency record, String errorMessage) {
+        if (record == null || record.getId() == null) {
+            return;
+        }
+        ChatRequestIdempotency update = new ChatRequestIdempotency();
+        update.setId(record.getId());
+        update.setStatus(IdempotencyStatus.FAILED);
+        update.setErrorMessage(trimError(errorMessage));
+        chatRequestIdempotencyMapper.updateById(update);
+    }
+
+    private void markIdempotencyInterrupted(ChatRequestIdempotency record, String errorMessage) {
+        if (record == null || record.getId() == null) {
+            return;
+        }
+        ChatRequestIdempotency update = new ChatRequestIdempotency();
+        update.setId(record.getId());
+        update.setStatus(IdempotencyStatus.INTERRUPTED);
+        update.setErrorMessage(trimError(errorMessage));
+        chatRequestIdempotencyMapper.updateById(update);
+    }
+
+    private String trimError(String error) {
+        if (error == null || error.isBlank()) {
+            return "unknown";
+        }
+        String trimmed = error.trim();
+        if (trimmed.length() <= 250) {
+            return trimmed;
+        }
+        return trimmed.substring(0, 250);
+    }
+
+    private String hashForIdempotency(Object... parts) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            StringBuilder raw = new StringBuilder();
+            if (parts != null) {
+                for (Object part : parts) {
+                    raw.append(part == null ? "<null>" : part.toString()).append('|');
+                }
+            }
+            byte[] bytes = digest.digest(raw.toString().getBytes(StandardCharsets.UTF_8));
+            return toHex(bytes);
+        } catch (Exception e) {
+            return UUID.randomUUID().toString().replace("-", "");
+        }
+    }
+
+    private String toHex(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            String hex = Integer.toHexString(b & 0xFF);
+            if (hex.length() == 1) {
+                sb.append('0');
+            }
+            sb.append(hex);
+        }
+        return sb.toString();
+    }
+
+    private UserMessageResolution resolveOrCreateUserMessage(String chatId,
+                                                             String userMessageId,
+                                                             String parentMessageId,
+                                                             String prompt,
+                                                             String model,
+                                                             int promptTokens) {
+        Message existing = lambdaQuery()
+                .eq(Message::getMessageId, userMessageId)
+                .last("limit 1")
+                .one();
+        if (existing == null && bloomFilterService.mightContainMessage(userMessageId)) {
+            existing = lambdaQuery()
+                    .eq(Message::getMessageId, userMessageId)
+                    .last("limit 1")
+                    .one();
+        }
+        if (existing != null) {
+            bloomFilterService.putMessage(existing.getMessageId());
+            if (!safeEquals(existing.getChatId(), chatId) || !"user".equals(existing.getRole())) {
+                throw new BusinessException(409, "messageId already exists");
+            }
+            if (!safeEquals(existing.getParentMessageId(), parentMessageId)
+                    || !safeEquals(existing.getContent(), prompt)) {
+                throw new BusinessException(409, "messageId conflicts with existing message");
+            }
+            Message latestAssistant = findLatestAssistantReply(chatId, userMessageId);
+            return new UserMessageResolution(existing, true, latestAssistant);
+        }
+
+        Message userMessage = Message.builder()
+                .messageId(userMessageId)
+                .chatId(chatId)
+                .parentMessageId(parentMessageId)
+                .role("user")
+                .content(prompt)
+                .model(model)
+                .tokens(promptTokens)
+                .status("SUCCESS")
+                .build();
+        try {
+            baseMapper.insert(userMessage);
+            bloomFilterService.putMessage(userMessageId);
+        } catch (DuplicateKeyException e) {
+            Message conflict = lambdaQuery()
+                    .eq(Message::getMessageId, userMessageId)
+                    .last("limit 1")
+                    .one();
+            if (conflict != null) {
+                bloomFilterService.putMessage(conflict.getMessageId());
+            }
+            if (conflict == null || !safeEquals(conflict.getChatId(), chatId) || !"user".equals(conflict.getRole())) {
+                throw new BusinessException(409, "messageId already exists");
+            }
+            if (!safeEquals(conflict.getParentMessageId(), parentMessageId)
+                    || !safeEquals(conflict.getContent(), prompt)) {
+                throw new BusinessException(409, "messageId conflicts with existing message");
+            }
+            Message latestAssistant = findLatestAssistantReply(chatId, userMessageId);
+            return new UserMessageResolution(conflict, true, latestAssistant);
+        }
+        return new UserMessageResolution(userMessage, false, null);
+    }
+
+    private Message findLatestAssistantReply(String chatId, String userMessageId) {
+        return lambdaQuery()
+                .eq(Message::getChatId, chatId)
+                .eq(Message::getParentMessageId, userMessageId)
+                .eq(Message::getRole, "assistant")
+                .eq(Message::getStatus, MessageStatus.SUCCESS)
+                .orderByDesc(Message::getCreatedAt)
+                .last("limit 1")
+                .one();
+    }
+
+    private boolean safeEquals(String a, String b) {
+        if (a == null && b == null) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        return a.equals(b);
+    }
+
     private void updateSessionStats(String chatId, int messageDelta, String currentMessageId) {
         Session session = sessionMapper.selectOne(new LambdaQueryWrapper<Session>()
                 .eq(Session::getChatId, chatId)
@@ -563,6 +914,97 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
             session.setCurrentMessageId(currentMessageId);
         }
         sessionMapper.updateById(session);
+    }
+
+    private void createAssistantPlaceholder(String chatId, String parentMessageId, String assistantMessageId, String model) {
+        Message assistantMessage = Message.builder()
+                .messageId(assistantMessageId)
+                .chatId(chatId)
+                .parentMessageId(parentMessageId)
+                .role("assistant")
+                .content("")
+                .model(model)
+                .tokens(0)
+                .status(MessageStatus.PENDING)
+                .build();
+        baseMapper.insert(assistantMessage);
+        bloomFilterService.putMessage(assistantMessageId);
+    }
+
+    private void markAssistantStreaming(String assistantMessageId) {
+        updateAssistantMessageState(assistantMessageId, MessageStatus.STREAMING, null, null);
+    }
+
+    private void markAssistantSucceeded(String assistantMessageId, String content, String model) {
+        updateAssistantMessageState(
+                assistantMessageId,
+                MessageStatus.SUCCESS,
+                content,
+                estimateCompletionTokens(content)
+        );
+    }
+
+    private void markAssistantFailed(String assistantMessageId, String content, String model, String errorMessage) {
+        String finalContent = trimAssistantTerminalContent(content, errorMessage);
+        updateAssistantMessageState(
+                assistantMessageId,
+                MessageStatus.FAILED,
+                finalContent,
+                estimateCompletionTokens(finalContent)
+        );
+    }
+
+    private void markAssistantInterrupted(String assistantMessageId, String content, String model) {
+        String finalContent = stripInterruptedMarkers(content);
+        updateAssistantMessageState(
+                assistantMessageId,
+                MessageStatus.INTERRUPTED,
+                finalContent,
+                estimateCompletionTokens(finalContent)
+        );
+    }
+
+    private void updateAssistantMessageState(String assistantMessageId, String status, String content, Integer tokens) {
+        if (assistantMessageId == null || assistantMessageId.isBlank()) {
+            return;
+        }
+        Message update = new Message();
+        update.setMessageId(assistantMessageId);
+        update.setStatus(status);
+        if (content != null) {
+            update.setContent(content);
+        }
+        if (tokens != null) {
+            update.setTokens(tokens);
+        }
+        baseMapper.update(
+                update,
+                new LambdaQueryWrapper<Message>()
+                        .eq(Message::getMessageId, assistantMessageId)
+                        .last("limit 1")
+        );
+    }
+
+    private String trimAssistantTerminalContent(String content, String suffix) {
+        String safeContent = content == null ? "" : content;
+        String safeSuffix = suffix == null || suffix.isBlank() ? "" : "\n\n" + suffix.trim();
+        String merged = safeContent + safeSuffix;
+        if (merged.length() <= 16000) {
+            return merged;
+        }
+        return merged.substring(0, 16000);
+    }
+
+    private String stripInterruptedMarkers(String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        String cleaned = content
+                .replace("\r\n", "\n")
+                .replaceAll("\\n\\s*\\[Interrupted by client]\\s*$", "")
+                .replaceAll("\\n\\s*\\[Interrupted]\\s*$", "")
+                .trim();
+        return cleaned;
     }
 
     private String buildTitle(String prompt) {
@@ -596,66 +1038,6 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         }
         return first.isBlank() ? buildTitle(prompt) : first;
     }
-
-    private String buildTitleWithLlm(String prompt, String model) {
-        String fallbackTitle = buildHeuristicTitle(prompt);
-        if (prompt == null || prompt.isBlank()) {
-            return fallbackTitle;
-        }
-        try {
-            String titleModel = (model == null || model.isBlank()) ? "deepseek-chat" : model;
-            LlmAdapter adapter = adapterRegistry.getAdapter(titleModel);
-            List<LlmMessage> titleMessages = List.of(
-                    new LlmMessage("system",
-                            "Summarize the user's message into a concise chat title (max 12 words). " +
-                                    "Use a short topic phrase. Do not copy the sentence verbatim " +
-                                    "or repeat long sequences from the input. Return plain title only."),
-                    new LlmMessage("user", prompt)
-            );
-            String generated = adapter.chat(titleMessages, titleModel);
-            if (generated == null || generated.isBlank()) {
-                return fallbackTitle;
-            }
-            String normalized = generated
-                    .replace("\n", " ")
-                    .replace("\r", " ")
-                    .replace("\"", "")
-                    .trim();
-            if ((normalized.startsWith("'") && normalized.endsWith("'"))
-                    || (normalized.startsWith("`") && normalized.endsWith("`"))) {
-                normalized = normalized.substring(1, normalized.length() - 1).trim();
-            }
-            if (isTooSimilarTitle(prompt, normalized)) {
-                return fallbackTitle;
-            }
-            if (normalized.length() > 60) {
-                normalized = normalized.substring(0, 60).trim();
-            }
-            return normalized.isBlank() ? fallbackTitle : normalized;
-        } catch (Exception ignored) {
-            return fallbackTitle;
-        }
-    }
-
-    private boolean isTooSimilarTitle(String prompt, String title) {
-        if (prompt == null || title == null) {
-            return false;
-        }
-        String p = prompt.replaceAll("\\s+", "").toLowerCase();
-        String t = title.replaceAll("\\s+", "").toLowerCase();
-        if (t.isBlank() || p.isBlank()) {
-            return false;
-        }
-        if (p.equals(t)) {
-            return true;
-        }
-        if (p.startsWith(t) && t.length() >= Math.min(20, p.length())) {
-            return true;
-        }
-        double ratio = (double) t.length() / (double) p.length();
-        return p.contains(t) && ratio > 0.7;
-    }
-
     private void updateSessionTitleIfNeeded(Session session, String prompt, String model) {
         if (session == null) {
             return;
@@ -670,7 +1052,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                 && !"RAG Chat".equalsIgnoreCase(title.trim())) {
             return;
         }
-        String newTitle = buildTitleWithLlm(prompt, model);
+        String newTitle = chatPromptService.generateSessionTitle(prompt);
         if (newTitle == null || newTitle.isBlank()) {
             return;
         }
@@ -829,7 +1211,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                     .eq(Agent::getAgentId, session.getAgentId())
                     .eq(Agent::getIsDeleted, false));
         }
-        String prompt = buildSystemPrompt(gpt, agent);
+        String prompt = chatPromptService.buildSystemPrompt(gpt, agent);
         if (prompt == null || prompt.isBlank()) {
             return null;
         }
@@ -1031,55 +1413,6 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         return "deepseek-chat";
     }
 
-    private String buildSystemPrompt(Gpt gpt, Agent agent) {
-        if (gpt != null && gpt.getInstructions() != null && !gpt.getInstructions().isBlank()) {
-            return gpt.getInstructions();
-        }
-        if (agent == null) {
-            return null;
-        }
-        String instructions = agent.getInstructions();
-        if (instructions == null || instructions.isBlank()) {
-            return null;
-        }
-        String toolsBlock = buildToolsBlock(agent.getTools());
-        if (toolsBlock == null) {
-            return instructions;
-        }
-        return instructions + "\n\n" + toolsBlock;
-    }
-
-    private String buildToolsBlock(String toolsJson) {
-        if (toolsJson == null || toolsJson.isBlank()) {
-            return null;
-        }
-        try {
-            List<String> tools = objectMapper.readValue(toolsJson, new TypeReference<List<String>>() {});
-            if (tools == null || tools.isEmpty()) {
-                return null;
-            }
-            boolean hasDatetime = tools.stream().anyMatch(t -> "datetime".equalsIgnoreCase(t));
-            StringBuilder sb = new StringBuilder();
-            sb.append("Available tools (call with JSON ONLY):\n");
-            for (String key : tools) {
-                AgentToolDefinition def = toolRegistry.get(key);
-                if (def != null) {
-                    sb.append("- ").append(def.getKey()).append(": ").append(def.getDescription()).append("\n");
-                } else {
-                    sb.append("- ").append(key).append("\n");
-                }
-            }
-            sb.append("When using a tool, respond ONLY with JSON: {\"tool\":\"<key>\",\"input\":\"...\"}.");
-            if (hasDatetime) {
-                sb.append(" For current time queries, use tool datetime with timezone (e.g. Asia/Shanghai).");
-            }
-            sb.append(" Do not use tools that are not listed.");
-            return sb.toString();
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     private String resolveRagContext(Session session, Long userId, Boolean useRag, String ragQuery, Integer ragTopK, String prompt) {
         boolean enabled = useRag != null ? useRag : Boolean.TRUE.equals(session != null ? session.getRagEnabled() : null);
         if (!enabled) {
@@ -1103,25 +1436,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         }
         return useRag == null || Boolean.TRUE.equals(useRag);
     }
-
-    private String ragNoContextMessageV4() {
-        return "No relevant context found in the knowledge base. Please refine your question or add documents.";
-    }
-
-    private String mergeSystemPrompt(String basePrompt, String ragContext) {
-        if (ragContext == null || ragContext.isBlank()) {
-            return basePrompt;
-        }
-        String prefix = "Knowledge base context:\n" + ragContext
-                + "\n\nInstruction: Use the knowledge base context to answer. "
-                + "If the context does not contain the answer, say you don't know.";
-        if (basePrompt == null || basePrompt.isBlank()) {
-            return prefix;
-        }
-        return basePrompt + "\n\n" + prefix;
-    }
-
-        private ToolHandlingResult handleToolCallIfNeeded(Session session,
+    private ToolHandlingResult handleToolCallIfNeeded(Session session,
                                           List<LlmMessage> messages,
                                           String assistantContent,
                                           String model,
@@ -1209,16 +1524,8 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         String prefix = extractNonToolPrefix(assistantContent);
         List<LlmMessage> followup = new ArrayList<>(messages);
         followup.add(new LlmMessage("assistant", assistantContent));
-        String followupInstruction = useChinese
-                ? "工具已返回结果。请基于结果直接回答用户，使用中文。不要返回 JSON，不要再调用工具。"
-                : "Tool result is ready. Provide the final answer in plain text based on the result. Do not return JSON and do not call any tool.";
-        if (prefix != null && !prefix.isBlank()) {
-            followupInstruction += useChinese
-                    ? ("\n请保留并放在开头的前缀句：" + prefix)
-                    : ("\nKeep this exact opening sentence at the beginning: " + prefix);
-        }
-        followup.add(new LlmMessage("user", "Tool result:\n" + result.getOutput()
-                + "\n\n" + followupInstruction));
+        followup.add(new LlmMessage("user",
+                chatPromptService.buildToolFollowupUserMessage(result.getOutput(), useChinese, prefix)));
         try {
             LlmAdapter adapter = adapterRegistry.getAdapter(model);
             String followupAnswer = adapter.chat(followup, model);
@@ -1252,14 +1559,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
             List<LlmMessage> strictFollowup = new ArrayList<>(messages);
             strictFollowup.add(new LlmMessage("assistant", assistantContent));
             strictFollowup.add(new LlmMessage("user",
-                    "Tool result:\n" + toolOutput
-                            + (useChinese
-                            ? "\n\n请直接返回最终答案（中文纯文本），不要调用任何工具，不要返回 JSON。"
-                            : "\n\nReturn the final answer directly in plain text, do not call any tool, and do not return JSON.")
-                            + ((prefix != null && !prefix.isBlank())
-                            ? (useChinese ? ("\n请保留并放在开头的前缀句：" + prefix)
-                            : ("\nKeep this exact opening sentence at the beginning: " + prefix))
-                            : "")));
+                    chatPromptService.buildStrictToolAnswerUserMessage(toolOutput, useChinese, prefix)));
             LlmAdapter adapter = adapterRegistry.getAdapter(model);
             return adapter.chat(strictFollowup, model);
         } catch (Exception e) {
@@ -1709,6 +2009,28 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         int chunkSize = 120;
         for (int i = 0; i < text.length(); i += chunkSize) {
             sink.next(text.substring(i, Math.min(text.length(), i + chunkSize)));
+        }
+    }
+
+    private static class IdempotencyGate {
+        private final ChatRequestIdempotency record;
+        private final String replayResponse;
+
+        private IdempotencyGate(ChatRequestIdempotency record, String replayResponse) {
+            this.record = record;
+            this.replayResponse = replayResponse;
+        }
+    }
+
+    private static class UserMessageResolution {
+        private final Message userMessage;
+        private final boolean reused;
+        private final Message latestAssistant;
+
+        private UserMessageResolution(Message userMessage, boolean reused, Message latestAssistant) {
+            this.userMessage = userMessage;
+            this.reused = reused;
+            this.latestAssistant = latestAssistant;
         }
     }
 

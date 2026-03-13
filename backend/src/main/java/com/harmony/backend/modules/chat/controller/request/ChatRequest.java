@@ -8,6 +8,7 @@ public class ChatRequest {
 
     private String chatId;
     private String prompt;
+    private String requestId;
     private String messageId;
     private String parentMessageId;
     private String regenerateFromAssistantMessageId;

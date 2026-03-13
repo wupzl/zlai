@@ -82,6 +82,9 @@
                 v-html="renderMarkdown(msg.content)"
               ></div>
               <div v-else>{{ msg.content }}</div>
+              <div v-if="msg.role === 'assistant' && msg.status === 'INTERRUPTED'" class="message-state interrupted">
+                Interrupted
+              </div>
               <div class="message-meta">
                 <span>{{ msg.role }}</span>
                 <span v-if="msg.messageId === activeMessageId">Current</span>
@@ -90,7 +93,7 @@
                 <button @click="startEditUser(msg)">Edit & Branch</button>
               </div>
               <div class="message-actions" v-if="msg.role === 'assistant'">
-                <button @click="regenerate(msg)">Regenerate</button>
+                <button :disabled="isStreaming" @click="regenerate(msg)">Regenerate</button>
               </div>
               <div class="branch-controls" v-if="getSiblingBranches(msg).length > 1">
                 <span>Branch</span>
@@ -109,7 +112,11 @@
             placeholder="Type a message"
             @keydown="onDraftKeydown"
           ></textarea>
-          <button class="send-btn" @click="sendMessage()">Send</button>
+          <button
+            class="send-btn"
+            :disabled="!isStreaming && !canSend"
+            @click="isStreaming ? stopStreaming() : sendMessage()"
+          >{{ isStreaming ? "Stop" : "Send" }}</button>
         </div>
       </div>
     </div>
@@ -141,6 +148,8 @@ export default {
       editingMessageId: "",
       editedContent: "",
       lastValidModel: "deepseek-chat",
+      activeStream: null,
+      activeStreamingMessageId: "",
       pendingGptId: "",
       pendingAgentId: "",
       isStreaming: false,
@@ -150,6 +159,9 @@ export default {
     };
   },
   computed: {
+    canSend() {
+      return (this.draft || "").trim().length > 0;
+    },
     branchCount() {
       let count = 0;
       for (const key in this.childMap) {
@@ -211,6 +223,9 @@ export default {
     if (chatId) {
       this.selectSession(chatId);
     }
+  },
+  beforeUnmount() {
+    this.stopStreaming();
   },
   methods: {
     normalizeMathBlocks(text) {
@@ -331,7 +346,7 @@ export default {
       this.pendingAgentId = "";
       this.pendingRag = false;
       const data = await apiRequest(`/api/chat/${chatId}`);
-      this.messages = data.messages || [];
+      this.messages = this.normalizeInterruptedMessages(data.messages || []);
       this.activeMessageId = data.currentMessageId || (this.messages.length ? this.messages[this.messages.length - 1].messageId : "");
       if (data.model) {
         this.selectedModel = data.model;
@@ -456,6 +471,8 @@ export default {
       }
       const payload = {
         chatId: this.activeChatId || null,
+        requestId: this.generateRequestId("chat"),
+        messageId: this.generateMessageId(),
         prompt: content,
         parentMessageId: parentId || null,
         model: this.selectedModel || null,
@@ -500,25 +517,41 @@ export default {
       }
 
       this.isStreaming = true;
-      const stream = await streamChat("/api/chat/stream", payload, (event, data) => {
-        if (event === "session_created") {
-          const parsed = JSON.parse(data);
-          this.activeChatId = parsed.chatId;
-          this.loadSessions();
-          this.syncRouteWithSession();
+      this.activeStreamingMessageId = assistantTempId;
+      let stream;
+      try {
+        stream = await streamChat("/api/chat/stream", payload, (event, data) => {
+          if (event === "session_created") {
+            const parsed = JSON.parse(data);
+            this.activeChatId = parsed.chatId;
+            this.loadSessions();
+            this.syncRouteWithSession();
+          }
+          if (event === "message_chunk") {
+            const parsed = JSON.parse(data);
+            this.applyStreamChunk(parsed.content, assistantTempId, userTempId);
+          }
+          if (event === "done") {
+            this.selectSession(this.activeChatId);
+          }
+        });
+        this.activeStream = stream;
+        await stream.done;
+      } catch (error) {
+        if (error?.name === "StreamAborted") {
+          this.markStreamInterrupted(assistantTempId);
+          await this.refreshSessionAfterInterrupt();
+        } else {
+          this.markStreamFailed(assistantTempId, error);
         }
-        if (event === "message_chunk") {
-          const parsed = JSON.parse(data);
-          this.applyStreamChunk(parsed.content, assistantTempId, userTempId);
+      } finally {
+        if (this.activeStream === stream) {
+          this.activeStream = null;
         }
-        if (event === "done") {
-          this.selectSession(this.activeChatId);
-        }
-      });
-
-      await stream.done;
-      stream.close();
-      this.isStreaming = false;
+        this.finishStreamingMessage(assistantTempId);
+        this.activeStreamingMessageId = "";
+        this.isStreaming = false;
+      }
     },
     async sendMessageSync(payload, userTempId, assistantTempId) {
       try {
@@ -569,6 +602,63 @@ export default {
         };
       }
       this.buildChildMap();
+    },
+    finishStreamingMessage(messageId) {
+      const target = this.messages.find((m) => m.messageId === messageId);
+      if (target) {
+        target.streaming = false;
+      }
+    },
+    stopStreaming() {
+      if (!this.activeStream) return;
+      const stream = this.activeStream;
+      this.activeStream = null;
+      stream.close();
+    },
+    markStreamInterrupted(messageId) {
+      const target = this.messages.find((m) => m.messageId === messageId);
+      if (target) {
+        target.content = this.stripInterruptedMarkers(target.content);
+        target.status = "INTERRUPTED";
+        target.streaming = false;
+      }
+    },
+    normalizeInterruptedMessages(messages) {
+      return (messages || []).map((msg) => {
+        if (msg && msg.role === "assistant" && msg.status === "INTERRUPTED") {
+          return {
+            ...msg,
+            content: this.stripInterruptedMarkers(msg.content)
+          };
+        }
+        return msg;
+      });
+    },
+    stripInterruptedMarkers(content) {
+      const text = content == null ? "" : String(content);
+      return text
+        .replace(/\r\n/g, "\n")
+        .replace(/\n\s*\[Interrupted by client]\s*$/i, "")
+        .replace(/\n\s*\[Interrupted]\s*$/i, "")
+        .trim();
+    },
+    async refreshSessionAfterInterrupt() {
+      if (!this.activeChatId) return;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      try {
+        await this.selectSession(this.activeChatId);
+      } catch {
+      }
+    },
+    markStreamFailed(messageId, error) {
+      const message = (error && error.message) ? String(error.message) : "Stream failed";
+      const target = this.messages.find((m) => m.messageId === messageId);
+      if (target) {
+        target.content = target.content || `Request failed: ${message}`;
+        target.streaming = false;
+        return;
+      }
+      window.alert(message);
     },
     getSiblingBranches(msg) {
       if (!msg) return [];
@@ -633,6 +723,7 @@ export default {
     async regenerate(msg) {
       if (!msg || msg.role !== "assistant") return;
       if (!this.activeChatId) return;
+      if (this.isStreaming) return;
       const assistantTempId = `tmp-assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const now = new Date().toISOString();
       this.messages.push({
@@ -653,6 +744,7 @@ export default {
       this.buildChildMap();
       const payload = {
         chatId: this.activeChatId,
+        requestId: this.generateRequestId("regen"),
         regenerateFromAssistantMessageId: msg.messageId,
         model: this.selectedModel || null,
         toolModel: this.selectedToolModel || null,
@@ -660,19 +752,47 @@ export default {
       };
 
       this.isStreaming = true;
-      const stream = await streamChat("/api/chat/stream", payload, (event, data) => {
-        if (event === "message_chunk") {
-          const parsed = JSON.parse(data);
-          this.applyStreamChunk(parsed.content, assistantTempId, msg.parentMessageId || null);
+      this.activeStreamingMessageId = assistantTempId;
+      let stream;
+      try {
+        stream = await streamChat("/api/chat/stream", payload, (event, data) => {
+          if (event === "message_chunk") {
+            const parsed = JSON.parse(data);
+            this.applyStreamChunk(parsed.content, assistantTempId, msg.parentMessageId || null);
+          }
+          if (event === "done") {
+            this.selectSession(this.activeChatId);
+          }
+        });
+        this.activeStream = stream;
+        await stream.done;
+      } catch (error) {
+        if (error?.name === "StreamAborted") {
+          this.markStreamInterrupted(assistantTempId);
+          await this.refreshSessionAfterInterrupt();
+        } else {
+          this.markStreamFailed(assistantTempId, error);
         }
-        if (event === "done") {
-          this.selectSession(this.activeChatId);
+      } finally {
+        if (this.activeStream === stream) {
+          this.activeStream = null;
         }
-      });
-
-      await stream.done;
-      stream.close();
-      this.isStreaming = false;
+        this.finishStreamingMessage(assistantTempId);
+        this.activeStreamingMessageId = "";
+        this.isStreaming = false;
+      }
+    },
+    generateMessageId() {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return `msg-${window.crypto.randomUUID()}`;
+      }
+      return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    },
+    generateRequestId(prefix = "req") {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return `${prefix}-${window.crypto.randomUUID()}`;
+      }
+      return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     }
   }
 };

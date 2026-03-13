@@ -26,7 +26,7 @@ public interface IUserService extends IService<User> {
 
     boolean updateLastLogoutTime(Long id, LocalDateTime logoutTime);
 
-    boolean updateTokenBalance(Long id, int delta);
+    boolean updateTokenBalance(Long id, long delta);
 
     boolean lockUser(Long id, LocalDateTime lockedUntil);
 

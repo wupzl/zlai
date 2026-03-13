@@ -58,7 +58,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     private final ApplicationEventPublisher eventPublisher;
     private final com.harmony.backend.ai.rag.service.OcrSettingsService ocrSettingsService;
     @Value("${app.user.default-token-balance:200000}")
-    private int defaultTokenBalance;
+    private long defaultTokenBalance;
 
     // Redis Key
     private static final String LOGIN_FAILURE_KEY_PREFIX = "login:fail:";
@@ -88,7 +88,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     }
 
     @Override
-    public boolean updateTokenBalance(Long id, int delta) {
+    public boolean updateTokenBalance(Long id, long delta) {
         return this.baseMapper.updateTokenBalance(id, delta) > 0;
     }
 

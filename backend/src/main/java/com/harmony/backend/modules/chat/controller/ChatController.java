@@ -2,7 +2,7 @@ package com.harmony.backend.modules.chat.controller;
 
 import com.harmony.backend.common.domain.ApiResponse;
 import com.harmony.backend.common.exception.BusinessException;
-import com.harmony.backend.common.util.JwtUtil;
+import com.harmony.backend.common.service.RedisTokenBucketService;
 import com.harmony.backend.common.util.RequestUtils;
 import com.harmony.backend.modules.chat.controller.request.ChatRequest;
 import com.harmony.backend.modules.chat.controller.response.ChatSessionVO;
@@ -11,6 +11,8 @@ import com.harmony.backend.modules.chat.config.ChatRateLimitProperties;
 import com.harmony.backend.modules.chat.service.ChatService;
 import com.harmony.backend.modules.chat.service.ModelPricingService;
 import com.harmony.backend.modules.chat.service.SessionService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.micrometer.core.annotation.Timed;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,18 +20,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -44,15 +45,14 @@ public class ChatController {
     private final ChatRateLimitProperties chatRateLimitProperties;
     private final ModelPricingService modelPricingService;
     private final RedisTemplate<String, Object> redisTemplate;
-    private final JwtUtil jwtUtil;
+    private final ObjectMapper objectMapper;
+    private final RedisTokenBucketService tokenBucketService;
     @Value("${app.chat.stream-timeout-seconds:90}")
     private int streamTimeoutSeconds;
 
     private static final String RATE_LIMIT_KEY_PREFIX = "rate_limit:chat:";
     private static final String SESSION_CACHE_KEY_PREFIX = "session:belong:";
     private static final String REQUEST_COUNT_KEY = "metrics:chat:request_count";
-    private static final String TOKEN_CACHE_PREFIX = "user:token:";
-
     @GetMapping("/{chatId}")
     @Timed(value = "chat.get_history", description = "Get chat history")
     public ApiResponse<Object> getHistory(@PathVariable String chatId,
@@ -200,12 +200,13 @@ public class ChatController {
             Long userId;
             try {
                 userId = getCurrentUserId(request);
-            } catch (ResponseStatusException e) {
-                return errorEventFlux(e.getReason() != null ? e.getReason() : "Unauthorized");
+            } catch (BusinessException e) {
+                return errorEventFlux(e.getMessage());
             }
 
             String chatId = chatRequest.getChatId();
             String prompt = chatRequest.getPrompt();
+            String requestId = chatRequest.getRequestId();
             String messageId = chatRequest.getMessageId();
             String parentMessageId = chatRequest.getParentMessageId();
             String regenerateFromAssistantMessageId = chatRequest.getRegenerateFromAssistantMessageId();
@@ -219,6 +220,9 @@ public class ChatController {
 
             boolean regenerateAssistant = regenerateFromAssistantMessageId != null
                     && !regenerateFromAssistantMessageId.isBlank();
+            if (requestId == null || requestId.isBlank()) {
+                return errorEventFlux("requestId is required");
+            }
             if (!regenerateAssistant) {
                 if (prompt == null || prompt.trim().isEmpty()) {
                     return errorEventFlux("Message content is empty");
@@ -262,7 +266,7 @@ public class ChatController {
                             clearUserSessionCache(userId);
                             initSSE = Flux.just(ServerSentEvent.<String>builder()
                                     .event("session_created")
-                                    .data("{\"chatId\":\"" + finalChatId + "\"}")
+                                    .data(toJson(Map.of("chatId", finalChatId)))
                                     .build());
                         }
 
@@ -272,12 +276,12 @@ public class ChatController {
                                 return errorEventFlux("Cannot regenerate on a new session");
                             }
                             rawStream = chatService.regenerateAssistant(
-                                    userId, finalChatId, regenerateFromAssistantMessageId, gptId, agentId, finalModel,
+                                    userId, finalChatId, regenerateFromAssistantMessageId, requestId, gptId, agentId, finalModel,
                                     toolModel,
                                     useRag, ragQuery, ragTopK);
                         } else {
                             rawStream = chatService.chat(
-                                    userId, finalChatId, prompt, parentMessageId, messageId, gptId, agentId, finalModel,
+                                    userId, finalChatId, prompt, parentMessageId, messageId, requestId, gptId, agentId, finalModel,
                                     toolModel,
                                     useRag, ragQuery, ragTopK);
                         }
@@ -288,10 +292,9 @@ public class ChatController {
 
                         Flux<ServerSentEvent<String>> chatStream = rawStream
                                 .map(chunk -> {
-                                    String escapedChunk = escapeJson(chunk);
                                     return ServerSentEvent.<String>builder()
                                             .event("message_chunk")
-                                            .data("{\"role\":\"assistant\",\"content\":\"" + escapedChunk + "\"}")
+                                            .data(toJson(Map.of("role", "assistant", "content", chunk)))
                                             .build();
                                 })
                                 .onBackpressureBuffer(100,
@@ -312,7 +315,7 @@ public class ChatController {
 
                         ServerSentEvent<String> doneEvent = ServerSentEvent.<String>builder()
                                 .event("done")
-                                .data("{\"success\":true}")
+                                .data(toJson(Map.of("success", true)))
                                 .build();
 
                         return initSSE
@@ -343,7 +346,11 @@ public class ChatController {
         Integer ragTopK = chatRequest.getRagTopK();
         String parentMessageId = chatRequest.getParentMessageId();
         String messageId = chatRequest.getMessageId();
+        String requestId = chatRequest.getRequestId();
         String toolModel = chatRequest.getToolModel();
+        if (requestId == null || requestId.isBlank()) {
+            return ApiResponse.error(400, "requestId is required");
+        }
 
         if (prompt == null || prompt.trim().isEmpty()) {
             return ApiResponse.error("Message content is empty");
@@ -374,7 +381,7 @@ public class ChatController {
         long startTime = System.currentTimeMillis();
         try {
             Object response = chatService.sendMessage(
-                    userId, chatId, prompt, parentMessageId, messageId,
+                    userId, chatId, prompt, parentMessageId, messageId, requestId,
                     gptId, agentId, model, toolModel, useRag, ragQuery, ragTopK);
             long duration = System.currentTimeMillis() - startTime;
 
@@ -410,21 +417,11 @@ public class ChatController {
 
         RateLimitConfig config = getRateLimitConfig(action);
 
-        Long userCount = redisTemplate.opsForValue().increment(userKey);
-        if (userCount != null && userCount == 1) {
-            redisTemplate.expire(userKey, config.windowSeconds, TimeUnit.SECONDS);
-        }
-
-        Long ipCount = redisTemplate.opsForValue().increment(ipKey);
-        if (ipCount != null && ipCount == 1) {
-            redisTemplate.expire(ipKey, config.windowSeconds, TimeUnit.SECONDS);
-        }
-
-        if (userCount != null && userCount > config.userLimit) {
+        if (!tokenBucketService.tryConsume(userKey, config.userLimit, config.windowSeconds)) {
             throw new BusinessException("Too many requests");
         }
 
-        if (ipCount != null && ipCount > config.ipLimit) {
+        if (!tokenBucketService.tryConsume(ipKey, config.ipLimit, config.windowSeconds)) {
             throw new BusinessException("Too many requests from IP");
         }
     }
@@ -476,17 +473,6 @@ public class ChatController {
         }
     }
 
-    private String escapeJson(String input) {
-        if (input == null) {
-            return "";
-        }
-        return input.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-    }
-
     private static class RateLimitConfig {
         int userLimit;
         int ipLimit;
@@ -529,68 +515,34 @@ public class ChatController {
         if (userIdFromContext != null) {
             return userIdFromContext;
         }
-
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
-        }
-
-        String token = authHeader.substring(7).trim();
-        try {
-            String userKey = TOKEN_CACHE_PREFIX + token;
-            Long userId = (Long) redisTemplate.opsForValue().get(userKey);
-
-            if (userId != null) {
-                return userId;
-            }
-
-            userId = jwtUtil.getInternalUserIdFromToken(token, false);
-            if (userId == null) {
-                log.warn("JWT parse failed");
-                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
-            }
-
-            var decodedJWT = jwtUtil.verifyAccessToken(token);
-            if (decodedJWT == null) {
-                log.warn("JWT verify failed");
-                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
-            }
-
-            long remainingSeconds = jwtUtil.getTokenRemainingTime(token, false);
-            if (remainingSeconds > 0) {
-                long cacheSeconds = (long) (remainingSeconds * 0.9);
-                redisTemplate.opsForValue().set(
-                        userKey,
-                        userId,
-                        Duration.ofSeconds(cacheSeconds)
-                );
-                log.debug("Cache token mapping: userId={}, remainingSeconds={}s", userId, cacheSeconds);
-            }
-
-            return userId;
-
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("JWT parse error: {}", e.getMessage(), e);
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
-        }
+        throw new BusinessException(401, "Unauthorized");
     }
 
     private Flux<ServerSentEvent<String>> errorEventFlux(String message) {
         return Flux.just(ServerSentEvent.<String>builder()
                 .event("error")
-                .data("{\"error\":\"" + escapeJson(message) + "\"}")
+                .data(toJson(Map.of("error", message)))
                 .build());
+    }
+
+    private String toJson(Map<String, ?> payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            log.warn("Serialize SSE payload failed", e);
+            Map<String, Object> fallback = new LinkedHashMap<>();
+            payload.forEach((key, value) -> fallback.put(key, value == null ? "" : String.valueOf(value)));
+            try {
+                return objectMapper.writeValueAsString(fallback);
+            } catch (JsonProcessingException ex) {
+                return "{\"error\":\"serialization_failed\"}";
+            }
+        }
     }
 
     private String resolveStreamError(Throwable error) {
         if (error instanceof BusinessException) {
             return error.getMessage();
-        }
-        if (error instanceof ResponseStatusException) {
-            String reason = ((ResponseStatusException) error).getReason();
-            return reason != null ? reason : "Unauthorized";
         }
         if (error instanceof UnsupportedOperationException) {
             return "Chat service not implemented";

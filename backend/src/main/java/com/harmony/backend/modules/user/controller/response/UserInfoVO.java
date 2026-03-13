@@ -13,7 +13,7 @@ public class UserInfoVO {
     private  String username;
     private String nickname;
     private String avatarUrl;
-    private Integer balance;
+    private Long balance;
     private String role;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime last_password_change;

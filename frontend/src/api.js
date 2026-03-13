@@ -1,11 +1,15 @@
-﻿const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
 
 export function getToken() {
   return localStorage.getItem("accessToken") || "";
 }
 
 export function setToken(token) {
-  localStorage.setItem("accessToken", token || "");
+  if (!token) {
+    localStorage.removeItem("accessToken");
+    return;
+  }
+  localStorage.setItem("accessToken", token);
 }
 
 export function clearToken() {
@@ -17,7 +21,11 @@ export function getRefreshToken() {
 }
 
 export function setRefreshToken(token) {
-  localStorage.setItem("refreshToken", token || "");
+  if (!token) {
+    localStorage.removeItem("refreshToken");
+    return;
+  }
+  localStorage.setItem("refreshToken", token);
 }
 
 export function clearRefreshToken() {
@@ -25,7 +33,10 @@ export function clearRefreshToken() {
 }
 
 export function setUserInfo(info) {
-  if (!info) return;
+  if (!info) {
+    localStorage.removeItem("userInfo");
+    return;
+  }
   localStorage.setItem("userInfo", JSON.stringify(info));
 }
 
@@ -39,27 +50,22 @@ export function getUserInfo() {
   }
 }
 
-export function clearUserInfo() {
-  localStorage.removeItem("userInfo");
-}
-
-export function setAdminFlag(value) {
-  localStorage.setItem("isAdmin", value ? "1" : "0");
+export function getUserRole() {
+  return String(getUserInfo()?.role || "").toUpperCase();
 }
 
 export function isAdmin() {
-  return localStorage.getItem("isAdmin") === "1";
+  return getUserRole() === "ADMIN";
 }
 
-export function clearAdminFlag() {
-  localStorage.removeItem("isAdmin");
+export function clearUserInfo() {
+  localStorage.removeItem("userInfo");
 }
 
 export function clearAuthState() {
   clearToken();
   clearRefreshToken();
   clearUserInfo();
-  clearAdminFlag();
 }
 
 let refreshPromise = null;
@@ -87,7 +93,7 @@ async function refreshAccessToken() {
 }
 
 function redirectToLogin() {
-  const admin = isAdmin();
+  const admin = window.location.pathname.startsWith("/admin") || isAdmin();
   clearAuthState();
   const target = admin ? "/auth/admin" : "/auth/user";
   if (window.location.pathname !== target) {
@@ -95,27 +101,21 @@ function redirectToLogin() {
   }
 }
 
-export async function apiRequest(path, options = {}) {
+export async function authFetch(path, options = {}) {
   const headers = {
-    "Content-Type": "application/json",
     ...(options.headers || {})
   };
   const token = getToken();
-  if (token) {
+  if (token && !headers.Authorization) {
     headers.Authorization = `Bearer ${token}`;
   }
+
   let res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers
   });
-  let data = await res.json().catch(() => ({}));
-  const message = (data && data.message) ? String(data.message) : "";
-  const isUnauthorized = res.status === 401
-    || data?.code === 401
-    || message.includes("Invalid or expired token")
-    || message.includes("Unauthorized")
-    || message.includes("Login expired");
-  if (isUnauthorized && !path.includes("/api/user/refresh")) {
+
+  if (res.status === 401 && !path.includes("/api/user/refresh")) {
     if (!refreshPromise) {
       refreshPromise = refreshAccessToken().finally(() => {
         refreshPromise = null;
@@ -128,16 +128,34 @@ export async function apiRequest(path, options = {}) {
         ...options,
         headers
       });
-      data = await res.json().catch(() => ({}));
     } else {
       redirectToLogin();
       throw new Error("Unauthorized");
     }
   }
-  if (path.includes("/api/user/refresh") && isUnauthorized) {
+
+  if (path.includes("/api/user/refresh") && res.status === 401) {
     redirectToLogin();
     throw new Error("Unauthorized");
   }
+
+  if (res.status === 401 || res.status === 403) {
+    redirectToLogin();
+  }
+
+  return res;
+}
+
+export async function apiRequest(path, options = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {})
+  };
+  const res = await authFetch(path, {
+    ...options,
+    headers
+  });
+  const data = await res.json().catch(() => ({}));
   if (!res.ok || (data && data.code && data.code !== 200)) {
     const errMsg = data?.message || "Request failed";
     if (res.status === 401 || res.status === 403 || data?.code === 401 || data?.code === 403) {
@@ -149,5 +167,3 @@ export async function apiRequest(path, options = {}) {
 }
 
 export { API_BASE };
-
-

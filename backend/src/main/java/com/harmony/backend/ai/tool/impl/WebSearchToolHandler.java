@@ -7,12 +7,13 @@ import com.harmony.backend.ai.tool.ToolExecutionResult;
 import com.harmony.backend.ai.tool.ToolHandler;
 import com.harmony.backend.ai.tool.model.ToolSearchSettings;
 import com.harmony.backend.ai.tool.service.ToolSearchSettingsService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import org.springframework.beans.factory.annotation.Value;
+import jakarta.annotation.PostConstruct;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -23,16 +24,26 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
 @Slf4j
-@RequiredArgsConstructor
 public class WebSearchToolHandler implements ToolHandler {
 
     private final ObjectMapper objectMapper;
     private final ToolSearchSettingsService toolSearchSettingsService;
+    private final ExecutorService webSearchExecutor;
+
+    public WebSearchToolHandler(ObjectMapper objectMapper,
+                                ToolSearchSettingsService toolSearchSettingsService,
+                                @Qualifier("webSearchExecutor") ExecutorService webSearchExecutor) {
+        this.objectMapper = objectMapper;
+        this.toolSearchSettingsService = toolSearchSettingsService;
+        this.webSearchExecutor = webSearchExecutor;
+    }
 
     @Value("${app.tools.search.wikipedia-user-agent:zlAI/1.0 (contact: tomchares0@gmail.com)}")
     private String wikipediaUserAgent;
@@ -42,6 +53,28 @@ public class WebSearchToolHandler implements ToolHandler {
 
     @Value("${app.tools.search.wikipedia-proxy-url:}")
     private String wikipediaProxyUrl;
+
+    @Value("${app.tools.search.max-concurrent-requests:20}")
+    private int maxConcurrentRequests;
+
+    @Value("${app.tools.search.acquire-timeout-ms:200}")
+    private int acquireTimeoutMs;
+
+    @Value("${app.tools.search.http-retry-max-attempts:2}")
+    private int httpRetryMaxAttempts;
+
+    @Value("${app.tools.search.http-retry-initial-backoff-ms:200}")
+    private int httpRetryInitialBackoffMs;
+
+    @Value("${app.tools.search.http-retry-max-backoff-ms:1200}")
+    private int httpRetryMaxBackoffMs;
+
+    private Semaphore concurrencyLimiter;
+
+    @PostConstruct
+    public void initLimiter() {
+        concurrencyLimiter = new Semaphore(Math.max(1, maxConcurrentRequests));
+    }
 
     @Override
     public boolean supports(String toolKey) {
@@ -95,8 +128,14 @@ public class WebSearchToolHandler implements ToolHandler {
     }
 
     private ToolExecutionResult executeWebSearchParallel(String input, ToolSearchSettings settings) {
-        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(5);
+        boolean acquired = false;
         try {
+            acquired = concurrencyLimiter.tryAcquire(Math.max(1, acquireTimeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
+            if (!acquired) {
+                log.warn("Web search rejected by limiter: maxConcurrentRequests={}", maxConcurrentRequests);
+                return ToolExecutionResult.fail("Search busy, please retry.");
+            }
+
             boolean wikiEnabled = settings == null || settings.getWikipediaEnabled() == null || settings.getWikipediaEnabled();
             boolean baikeEnabled = settings != null && settings.getBaikeEnabled() != null && settings.getBaikeEnabled();
             boolean bochaEnabled = settings != null && settings.getBochaEnabled() != null && settings.getBochaEnabled()
@@ -107,7 +146,7 @@ public class WebSearchToolHandler implements ToolHandler {
                     || StringUtils.hasText(settings.getSerpApiKey()));
 
             java.util.concurrent.ExecutorCompletionService<ToolExecutionResult> ecs =
-                    new java.util.concurrent.ExecutorCompletionService<>(executor);
+                    new java.util.concurrent.ExecutorCompletionService<>(webSearchExecutor);
             java.util.List<java.util.concurrent.Future<ToolExecutionResult>> futures = new java.util.ArrayList<>();
             java.util.Map<java.util.concurrent.Future<ToolExecutionResult>, String> sources = new java.util.HashMap<>();
 
@@ -240,7 +279,9 @@ public class WebSearchToolHandler implements ToolHandler {
             Thread.currentThread().interrupt();
             return null;
         } finally {
-            executor.shutdownNow();
+            if (acquired) {
+                concurrencyLimiter.release();
+            }
         }
     }
 
@@ -904,7 +945,7 @@ public class WebSearchToolHandler implements ToolHandler {
                 .timeout(Duration.ofSeconds(12))
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
-        return client.send(request, HttpResponse.BodyHandlers.ofString());
+        return sendWithRetry(client, request);
     }
 
     private HttpResponse<String> httpGet(String url, String userAgent) throws Exception {
@@ -922,7 +963,39 @@ public class WebSearchToolHandler implements ToolHandler {
                 .timeout(Duration.ofSeconds(timeoutSeconds))
                 .GET()
                 .build();
-        return client.send(request, HttpResponse.BodyHandlers.ofString());
+        return sendWithRetry(client, request);
+    }
+
+    private HttpResponse<String> sendWithRetry(HttpClient client, HttpRequest request) throws Exception {
+        int maxAttempts = Math.max(1, httpRetryMaxAttempts);
+        long backoff = Math.max(50, httpRetryInitialBackoffMs);
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                if (!shouldRetryStatus(response.statusCode()) || attempt == maxAttempts) {
+                    return response;
+                }
+                log.warn("Web search http retry: status={}, attempt={}/{}", response.statusCode(), attempt, maxAttempts);
+            } catch (Exception ex) {
+                if (attempt == maxAttempts) {
+                    throw ex;
+                }
+                log.warn("Web search http retry on exception: attempt={}/{}, error={}", attempt, maxAttempts, ex.getMessage());
+            }
+
+            try {
+                Thread.sleep(backoff);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw ie;
+            }
+            backoff = Math.min(backoff * 2, Math.max(backoff, httpRetryMaxBackoffMs));
+        }
+        throw new IllegalStateException("HTTP retry exhausted");
+    }
+
+    private boolean shouldRetryStatus(int statusCode) {
+        return statusCode == 429 || statusCode == 408 || statusCode >= 500;
     }
 
     private String formatResults(List<String> results) {
