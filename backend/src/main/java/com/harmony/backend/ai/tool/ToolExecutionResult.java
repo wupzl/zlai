@@ -1,5 +1,6 @@
 package com.harmony.backend.ai.tool;
 
+import com.harmony.backend.ai.runtime.AgentExecutionResultView;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -7,7 +8,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ToolExecutionResult {
+public class ToolExecutionResult implements AgentExecutionResultView {
     private boolean success;
     private String output;
     private String error;
@@ -27,3 +28,5 @@ public class ToolExecutionResult {
         return new ToolExecutionResult(false, null, error, null, null, null);
     }
 }
+
+

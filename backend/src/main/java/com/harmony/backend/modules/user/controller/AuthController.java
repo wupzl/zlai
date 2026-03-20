@@ -7,6 +7,7 @@ import com.harmony.backend.modules.user.controller.response.LoginResponse;
 import com.harmony.backend.modules.user.controller.response.UserInfoVO;
 import com.harmony.backend.modules.user.service.IUserService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
@@ -37,9 +38,11 @@ public class AuthController {
      * Login and return tokens.
      */
     @PostMapping("/login")
-    public ApiResponse<LoginResponse> login(@RequestBody LoginRequest loginRequest, HttpServletRequest httpRequest) {
+    public ApiResponse<LoginResponse> login(@RequestBody LoginRequest loginRequest,
+                                            HttpServletRequest httpRequest,
+                                            HttpServletResponse httpResponse) {
         log.info("Login request: username={}", loginRequest.getUsername());
-        LoginResponse loginResponse = userService.login(loginRequest, httpRequest);
+        LoginResponse loginResponse = userService.login(loginRequest, httpRequest, httpResponse);
         return ApiResponse.success(loginResponse);
     }
 }

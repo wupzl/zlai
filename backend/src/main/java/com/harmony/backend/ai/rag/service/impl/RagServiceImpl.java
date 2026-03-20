@@ -2,12 +2,19 @@ package com.harmony.backend.ai.rag.service.impl;
 
 import com.harmony.backend.ai.rag.config.RagProperties;
 import com.harmony.backend.ai.rag.embedding.EmbeddingService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.harmony.backend.ai.rag.model.PreparedRagChunk;
+import com.harmony.backend.ai.rag.model.PreparedRagDocument;
 import com.harmony.backend.ai.rag.model.RagChunkCandidate;
+import com.harmony.backend.ai.rag.model.RagDocumentHit;
 import com.harmony.backend.ai.rag.model.RagChunkMatch;
 import com.harmony.backend.ai.rag.model.RagDocumentSummary;
 import com.harmony.backend.ai.rag.repository.RagRepository;
 import com.harmony.backend.ai.rag.service.OcrService;
 import com.harmony.backend.ai.rag.service.RagService;
+import com.harmony.backend.ai.rag.service.support.RagIngestPipelineService;
+import com.harmony.backend.ai.rag.service.support.RagOcrOptimizer;
 import com.harmony.backend.common.exception.BusinessException;
 import com.harmony.backend.common.response.PageResult;
 import com.harmony.backend.common.util.TokenCounter;
@@ -18,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -25,6 +33,7 @@ import java.util.List;
 import java.util.Set;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,9 +47,12 @@ public class RagServiceImpl implements RagService {
     private static final Pattern PARAGRAPH_SPLIT_PATTERN = Pattern.compile("\\n\\s*\\n+");
 
     private final RagRepository ragRepository;
+    private final ObjectMapper objectMapper;
     private final EmbeddingService embeddingService;
     private final RagProperties properties;
     private final OcrService ocrService;
+    private final RagIngestPipelineService ragIngestPipelineService;
+    private final RagOcrOptimizer ragOcrOptimizer;
 
     @Override
     @Transactional(transactionManager = "ragTransactionManager", rollbackFor = Exception.class)
@@ -52,13 +64,8 @@ public class RagServiceImpl implements RagService {
             throw new BusinessException(400, "Content is required");
         }
         String safeTitle = StringUtils.hasText(title) ? title.trim() : "Untitled";
-        String docId = ragRepository.createDocument(userId, safeTitle, content);
-        List<String> chunks = splitContent(content);
-        for (String chunk : chunks) {
-            float[] embedding = embeddingService.embed(chunk);
-            ragRepository.insertChunk(docId, userId, chunk, embedding);
-        }
-        return docId;
+        PreparedRagDocument prepared = ragIngestPipelineService.prepare(content);
+        return ingestPreparedDocument(userId, safeTitle, prepared);
     }
 
     @Override
@@ -72,7 +79,8 @@ public class RagServiceImpl implements RagService {
         }
         String safeTitle = StringUtils.hasText(title) ? title.trim() : deriveTitleFromSource(sourcePath);
         String enriched = enrichMarkdownWithImageRefs(markdownContent, sourcePath);
-        return ingest(userId, safeTitle, enriched);
+        PreparedRagDocument prepared = ragIngestPipelineService.prepareMarkdown(enriched);
+        return ingestPreparedDocument(userId, safeTitle, prepared);
     }
 
     @Override
@@ -87,7 +95,27 @@ public class RagServiceImpl implements RagService {
         }
         String safeTitle = StringUtils.hasText(title) ? title.trim() : "Markdown Note";
         String enriched = embedImages(markdownContent, images);
-        return ingest(userId, safeTitle, enriched);
+        PreparedRagDocument prepared = ragIngestPipelineService.prepareMarkdown(enriched);
+        return ingestPreparedDocument(userId, safeTitle, prepared);
+    }
+
+    private String ingestPreparedDocument(Long userId, String safeTitle, PreparedRagDocument prepared) {
+        if (prepared == null || !StringUtils.hasText(prepared.getContent())) {
+            throw new BusinessException(400, "Content is empty after cleaning");
+        }
+        String contentHash = hashContent(prepared.getContent());
+        String existingDocId = ragRepository.findActiveDocumentIdByHash(userId, contentHash);
+        if (StringUtils.hasText(existingDocId)) {
+            ragRepository.touchDocument(existingDocId, safeTitle);
+            log.info("RAG dedup hit. userId={}, docId={}, title={}", userId, existingDocId, safeTitle);
+            return existingDocId;
+        }
+        String docId = ragRepository.createDocument(userId, safeTitle, prepared.getContent(), contentHash);
+        for (PreparedRagChunk chunk : prepared.getChunks()) {
+            float[] embedding = embeddingService.embed(chunk.getContent());
+            ragRepository.insertChunk(docId, userId, chunk.getContent(), embedding, serializeChunkMetadata(chunk));
+        }
+        return docId;
     }
 
     @Override
@@ -99,8 +127,18 @@ public class RagServiceImpl implements RagService {
             throw new BusinessException(400, "Query is required");
         }
         int limit = topK != null && topK > 0 ? topK : properties.getDefaultTopK();
-        float[] embedding = embeddingService.embed(query);
         RagProperties.Search search = properties.getSearch();
+        if (search != null && search.isHybridEnabled()) {
+            return hybridSearch(userId, query, limit, search);
+        }
+        return vectorSearch(userId, query, limit, search);
+    }
+
+    private List<RagChunkMatch> vectorSearch(Long userId,
+                                             String query,
+                                             int limit,
+                                             RagProperties.Search search) {
+        float[] embedding = embeddingService.embed(query);
         if (search != null && "mmr".equalsIgnoreCase(search.getStrategy())) {
             List<RagChunkMatch> mmrMatches = mmrSearch(userId, embedding, limit, search);
             if (mmrMatches != null && !mmrMatches.isEmpty()) {
@@ -115,6 +153,20 @@ public class RagServiceImpl implements RagService {
 
     @Override
     public String buildContext(Long userId, String query, Integer topK) {
+        boolean preferWholeDocument = shouldPreferWholeDocument(query);
+        String documentAwareContext = resolveWholeDocumentContext(userId, query);
+        if (StringUtils.hasText(documentAwareContext)) {
+            log.info("RAG document-aware hit. query='{}'", query);
+            return documentAwareContext;
+        }
+        if (preferWholeDocument) {
+            log.info("RAG document-aware preferred but no document candidate. query='{}'", query);
+        }
+        String sectionAwareContext = preferWholeDocument ? "" : resolveSectionAwareContext(userId, query, topK);
+        if (StringUtils.hasText(sectionAwareContext)) {
+            log.info("RAG section-aware hit. query='{}'", query);
+            return sectionAwareContext;
+        }
         List<RagChunkMatch> matches = search(userId, query, topK);
         if (matches.isEmpty()) {
             List<String> fallback = keywordFallback(userId, query, topK);
@@ -152,7 +204,60 @@ public class RagServiceImpl implements RagService {
             return "";
         }
         log.info("RAG vector search hit. query='{}' matches={}", query, matches.size());
-        return buildContextFromMatches(matches);
+        return buildContextFromMatches(matches, properties.getSearch());
+    }
+
+    private String resolveSectionAwareContext(Long userId, String query, Integer topK) {
+        List<String> sectionTargets = extractSectionTargets(query);
+        if (sectionTargets.isEmpty()) {
+            return "";
+        }
+        log.info("RAG section-aware targets. query='{}' sectionTargets={}", query, sectionTargets);
+        List<RagDocumentHit> docCandidates = findSectionDocumentCandidates(userId, query, sectionTargets);
+        if (docCandidates.isEmpty()) {
+            log.info("RAG section-aware doc miss. query='{}'", query);
+            return "";
+        }
+        RagDocumentHit bestDoc = docCandidates.get(0);
+        log.info("RAG section-aware doc candidates. query='{}' candidates={}", query, summarizeDocumentHits(docCandidates, 3));
+        int limit = topK != null && topK > 0 ? topK : properties.getDefaultTopK();
+        java.util.Map<String, RagChunkMatch> merged = new java.util.LinkedHashMap<>();
+        for (String sectionTarget : sectionTargets) {
+            List<RagChunkMatch> headingHits =
+                    ragRepository.searchChunkMatchesByHeadingInDocument(userId, bestDoc.getDocId(), sectionTarget, Math.max(limit * 2, limit));
+            log.info("RAG section-aware heading hits. query='{}' doc='{}' target='{}' hits={}",
+                    query, bestDoc.getTitle(), sectionTarget, summarizeChunkMatches(headingHits, 4));
+            mergeKeywordCandidates(query, merged, headingHits, 0.46);
+            for (String keyword : extractKeywords(sectionTarget)) {
+                List<RagChunkMatch> keywordHits =
+                        ragRepository.searchChunkMatchesByKeywordInDocument(userId, bestDoc.getDocId(), keyword, Math.max(limit, 4));
+                mergeKeywordCandidates(query, merged, keywordHits, 0.08);
+            }
+        }
+        if (merged.isEmpty()) {
+            log.info("RAG section-aware chunk miss. query='{}' doc='{}'", query, bestDoc.getTitle());
+            return "";
+        }
+        List<RagChunkMatch> ranked = new ArrayList<>(merged.values());
+        ranked.sort(Comparator.comparingDouble(RagChunkMatch::getScore).reversed());
+        if (ranked.size() > limit) {
+            ranked = new ArrayList<>(ranked.subList(0, limit));
+        }
+        log.info("RAG section-aware ranked chunks. query='{}' doc='{}' chunks={}",
+                query, bestDoc.getTitle(), summarizeChunkMatches(ranked, Math.min(4, ranked.size())));
+        return buildContextFromMatches(ranked, properties.getSearch());
+    }
+
+    private String resolveWholeDocumentContext(Long userId, String query) {
+        if (!isWholeDocumentIntent(query)) {
+            return "";
+        }
+        List<RagDocumentHit> candidates = findWholeDocumentCandidates(userId, query);
+        if (candidates.isEmpty()) {
+            return "";
+        }
+        RagDocumentHit best = candidates.get(0);
+        return buildWholeDocumentContext(best, query);
     }
 
     @Override
@@ -217,49 +322,6 @@ public class RagServiceImpl implements RagService {
         return result;
     }
 
-    private List<String> splitContent(String content) {
-        if (!StringUtils.hasText(content)) {
-            return List.of();
-        }
-        int targetTokens = Math.max(120, properties.getChunkTokenSize());
-        int overlapTokens = Math.max(0, Math.min(properties.getChunkTokenOverlap(), targetTokens / 2));
-        List<String> segments = splitIntoSegments(content);
-        List<String> chunks = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        int currentTokens = 0;
-
-        for (String segment : segments) {
-            String normalized = segment == null ? "" : segment.trim();
-            if (!StringUtils.hasText(normalized)) {
-                continue;
-            }
-            int segmentTokens = TokenCounter.estimateTokens(normalized);
-            if (segmentTokens > targetTokens) {
-                if (currentTokens > 0) {
-                    chunks.add(current.toString().trim());
-                    current.setLength(0);
-                    currentTokens = 0;
-                }
-                chunks.addAll(splitLargeSegment(normalized, targetTokens, overlapTokens));
-                continue;
-            }
-            if (currentTokens > 0 && currentTokens + segmentTokens > targetTokens) {
-                chunks.add(current.toString().trim());
-                current.setLength(0);
-                currentTokens = 0;
-            }
-            if (currentTokens > 0) {
-                current.append("\n\n");
-            }
-            current.append(normalized);
-            currentTokens = TokenCounter.estimateTokens(current.toString());
-        }
-        if (currentTokens > 0) {
-            chunks.add(current.toString().trim());
-        }
-        return chunks;
-    }
-
     private List<String> keywordFallback(Long userId, String query, Integer topK) {
         int limit = topK != null && topK > 0 ? topK : properties.getDefaultTopK();
         LinkedHashSet<String> results = new LinkedHashSet<>();
@@ -287,6 +349,713 @@ public class RagServiceImpl implements RagService {
             results.addAll(inMemoryKeywordFallback(userId, query, limit));
         }
         return new ArrayList<>(results);
+    }
+
+    private List<RagDocumentHit> findDocumentCandidates(Long userId, String query) {
+        LinkedHashSet<String> terms = new LinkedHashSet<>();
+        if (StringUtils.hasText(query)) {
+            terms.add(query.trim());
+        }
+        terms.addAll(extractKeywords(query));
+        java.util.Map<String, RagDocumentHit> merged = new java.util.LinkedHashMap<>();
+        for (String term : terms) {
+            if (!StringUtils.hasText(term)) {
+                continue;
+            }
+            List<RagDocumentHit> hits = ragRepository.searchDocumentsByTitle(userId, term, 5);
+            for (RagDocumentHit hit : hits) {
+                if (hit == null || !StringUtils.hasText(hit.getDocId()) || !StringUtils.hasText(hit.getContent())) {
+                    continue;
+                }
+                double score = documentTitleScore(query, hit);
+                RagDocumentHit existing = merged.get(hit.getDocId());
+                if (existing == null || score > existing.getScore()) {
+                    merged.put(hit.getDocId(), new RagDocumentHit(hit.getDocId(), hit.getTitle(), hit.getContent(), score));
+                }
+            }
+        }
+        List<RagDocumentHit> ranked = new ArrayList<>(merged.values());
+        ranked.sort(Comparator.comparingDouble(RagDocumentHit::getScore).reversed());
+        return ranked;
+    }
+
+    private List<RagDocumentHit> findSectionDocumentCandidates(Long userId, String query, List<String> sectionTargets) {
+        List<String> docTitleTargets = extractDocumentTitleTargets(query, sectionTargets);
+        java.util.Map<String, RagDocumentHit> merged = new java.util.LinkedHashMap<>();
+        for (String titleTarget : docTitleTargets) {
+            List<RagDocumentHit> hits = ragRepository.searchDocumentsByTitle(userId, titleTarget, 5);
+            for (RagDocumentHit hit : hits) {
+                if (hit == null || !StringUtils.hasText(hit.getDocId()) || !StringUtils.hasText(hit.getContent())) {
+                    continue;
+                }
+                double score = documentTitleScore(titleTarget, hit) + 0.28;
+                RagDocumentHit existing = merged.get(hit.getDocId());
+                if (existing == null || score > existing.getScore()) {
+                    merged.put(hit.getDocId(), new RagDocumentHit(hit.getDocId(), hit.getTitle(), hit.getContent(), score));
+                }
+            }
+        }
+        if (merged.isEmpty()) {
+            return findDocumentCandidates(userId, query);
+        }
+        List<RagDocumentHit> ranked = new ArrayList<>(merged.values());
+        ranked.sort(Comparator.comparingDouble(RagDocumentHit::getScore).reversed());
+        return ranked;
+    }
+
+    private List<RagChunkMatch> hybridSearch(Long userId,
+                                             String query,
+                                             int limit,
+                                             RagProperties.Search search) {
+        List<RagChunkMatch> vectorMatches = vectorSearch(userId, query, Math.max(limit * 2, limit), search);
+        List<RagChunkMatch> keywordMatches = keywordSearch(userId, query, Math.max(limit * 2, limit));
+        List<RagChunkMatch> merged = mergeHybridMatches(query, vectorMatches, keywordMatches, search);
+        if (merged.size() > limit) {
+            return new ArrayList<>(merged.subList(0, limit));
+        }
+        return merged;
+    }
+
+    private List<RagChunkMatch> keywordSearch(Long userId, String query, int limit) {
+        if (!StringUtils.hasText(query)) {
+            return List.of();
+        }
+        LinkedHashSet<String> terms = new LinkedHashSet<>();
+        String normalized = query.trim();
+        terms.add(normalized);
+        terms.addAll(extractKeywords(query));
+        List<String> sectionTargets = extractSectionTargets(query);
+        java.util.Map<String, RagChunkMatch> merged = new java.util.LinkedHashMap<>();
+        for (String target : sectionTargets) {
+            if (!StringUtils.hasText(target)) {
+                continue;
+            }
+            List<RagChunkMatch> headingHits = ragRepository.searchChunkMatchesByHeading(userId, target, limit);
+            mergeKeywordCandidates(query, merged, headingHits, 0.28);
+        }
+        for (String term : terms) {
+            if (!StringUtils.hasText(term)) {
+                continue;
+            }
+            List<RagChunkMatch> hits = ragRepository.searchChunkMatchesByKeyword(userId, term, limit);
+            mergeKeywordCandidates(query, merged, hits, 0.0);
+        }
+        List<RagChunkMatch> ranked = new ArrayList<>(merged.values());
+        ranked.sort(Comparator.comparingDouble(RagChunkMatch::getScore).reversed());
+        if (ranked.size() > limit) {
+            return new ArrayList<>(ranked.subList(0, limit));
+        }
+        return ranked;
+    }
+
+    private List<RagChunkMatch> mergeHybridMatches(String query,
+                                                   List<RagChunkMatch> vectorMatches,
+                                                   List<RagChunkMatch> keywordMatches,
+                                                   RagProperties.Search search) {
+        double vectorWeight = search == null ? 0.65 : clamp(search.getVectorWeight(), 0.0, 1.0);
+        double keywordWeight = search == null ? 0.35 : clamp(search.getKeywordWeight(), 0.0, 1.0);
+        if (vectorWeight == 0.0 && keywordWeight == 0.0) {
+            vectorWeight = 0.65;
+            keywordWeight = 0.35;
+        }
+        java.util.Map<String, Double> vectorScoreMap = new java.util.HashMap<>();
+        java.util.Map<String, RagChunkMatch> contentMap = new java.util.LinkedHashMap<>();
+        if (vectorMatches != null) {
+            for (RagChunkMatch match : vectorMatches) {
+                if (match == null || !StringUtils.hasText(match.getContent())) {
+                    continue;
+                }
+                String key = normalizeText(match.getContent());
+                vectorScoreMap.merge(key, match.getScore(), Math::max);
+                contentMap.putIfAbsent(key, match);
+            }
+        }
+        java.util.Map<String, Double> keywordScoreMap = new java.util.HashMap<>();
+        if (keywordMatches != null) {
+            for (RagChunkMatch match : keywordMatches) {
+                if (match == null || !StringUtils.hasText(match.getContent())) {
+                    continue;
+                }
+                String key = normalizeText(match.getContent());
+                keywordScoreMap.merge(key, match.getScore(), Math::max);
+                contentMap.putIfAbsent(key, match);
+            }
+        }
+        List<RagChunkMatch> merged = new ArrayList<>();
+        for (java.util.Map.Entry<String, RagChunkMatch> entry : contentMap.entrySet()) {
+            String key = entry.getKey();
+            RagChunkMatch base = entry.getValue();
+            double vectorScore = vectorScoreMap.getOrDefault(key, 0.0);
+            double keywordScore = keywordScoreMap.getOrDefault(key, 0.0);
+            double rerank = rerankScore(query, base.getContent(), vectorScore, keywordScore, base.getChunkMetadata());
+            double finalScore = vectorScore * vectorWeight + keywordScore * keywordWeight + rerank;
+            merged.add(new RagChunkMatch(base.getDocId(), base.getContent(), finalScore, base.getChunkMetadata()));
+        }
+        merged.sort(Comparator.comparingDouble(RagChunkMatch::getScore).reversed());
+        return merged;
+    }
+
+    private double lexicalScore(String query, String content, double baseScore) {
+        double score = Math.max(0.0, baseScore);
+        if (!StringUtils.hasText(content)) {
+            return score;
+        }
+        String normalizedQuery = normalizeText(query);
+        String normalizedContent = normalizeText(content);
+        if (StringUtils.hasText(normalizedQuery) && normalizedContent.contains(normalizedQuery)) {
+            score += 0.25;
+        }
+        List<String> keywords = extractKeywords(query);
+        int hits = 0;
+        for (String keyword : keywords) {
+            if (containsIgnoreCase(content, keyword)) {
+                hits++;
+            }
+        }
+        if (!keywords.isEmpty()) {
+            score += Math.min(0.3, hits / (double) keywords.size() * 0.3);
+        }
+        return score;
+    }
+
+    private double rerankScore(String query,
+                               String content,
+                               double vectorScore,
+                               double keywordScore,
+                               String chunkMetadata) {
+        if (!StringUtils.hasText(content)) {
+            return 0.0;
+        }
+        double score = 0.0;
+        String normalizedQuery = normalizeText(query);
+        String normalizedContent = normalizeText(content);
+        java.util.Map<String, Object> metadata = parseChunkMetadata(chunkMetadata);
+        String blockType = metadataString(metadata, "blockType");
+        List<String> headings = metadataStringList(metadata, "headings");
+        Integer ordinal = metadataInt(metadata, "ordinal");
+        List<String> sectionTargets = extractSectionTargets(query);
+        if (StringUtils.hasText(normalizedQuery) && normalizedContent.contains(normalizedQuery)) {
+            score += 0.22;
+        }
+        List<String> mustHave = extractMustHaveKeywordsV2(query, extractKeywords(query));
+        if (!mustHave.isEmpty()) {
+            boolean hit = false;
+            for (String token : mustHave) {
+                if (containsIgnoreCase(content, token)) {
+                    hit = true;
+                    break;
+                }
+            }
+            score += hit ? 0.14 : -0.08;
+        }
+        if (content.contains("[Section]")) {
+            score += 0.05;
+        }
+        if (!sectionTargets.isEmpty()) {
+            boolean exactSectionHit = false;
+            boolean partialSectionHit = false;
+            for (String heading : headings) {
+                for (String target : sectionTargets) {
+                    if (sectionHeadingExactMatch(heading, target)) {
+                        exactSectionHit = true;
+                        break;
+                    }
+                    if (sectionHeadingPartialMatch(heading, target)) {
+                        partialSectionHit = true;
+                    }
+                }
+                if (exactSectionHit) {
+                    break;
+                }
+            }
+            if (exactSectionHit) {
+                score += 0.34;
+            } else if (partialSectionHit) {
+                score += 0.12;
+            } else {
+                score -= 0.06;
+            }
+        }
+        if (!headings.isEmpty()) {
+            score += 0.05;
+            int headingHits = 0;
+            for (String heading : headings) {
+                if (containsIgnoreCase(heading, query)) {
+                    headingHits++;
+                } else {
+                    for (String keyword : extractKeywords(query)) {
+                        if (containsIgnoreCase(heading, keyword)) {
+                            headingHits++;
+                            break;
+                        }
+                    }
+                }
+            }
+            score += Math.min(0.12, headingHits * 0.04);
+        }
+        if ("heading".equalsIgnoreCase(blockType)) {
+            score += 0.12;
+        } else if ("table".equalsIgnoreCase(blockType)) {
+            score += 0.07;
+        } else if ("list".equalsIgnoreCase(blockType)) {
+            score += 0.04;
+        } else if ("mixed".equalsIgnoreCase(blockType)) {
+            score -= 0.02;
+        }
+        int tokens = TokenCounter.estimateTokens(content);
+        if (tokens > 0 && tokens < Math.max(80, properties.getChunkTokenSize() * 2)) {
+            score += 0.03;
+        }
+        if (ordinal != null && ordinal > 12) {
+            score -= 0.01;
+        }
+        if (vectorScore > 0.0 && keywordScore > 0.0) {
+            score += 0.08;
+        }
+        return score;
+    }
+
+    private void mergeKeywordCandidates(String query,
+                                        java.util.Map<String, RagChunkMatch> merged,
+                                        List<RagChunkMatch> hits,
+                                        double extraBoost) {
+        if (hits == null || hits.isEmpty()) {
+            return;
+        }
+        for (RagChunkMatch hit : hits) {
+            if (hit == null || !StringUtils.hasText(hit.getContent())) {
+                continue;
+            }
+            String key = normalizeText(hit.getContent());
+            double lexicalScore = lexicalScore(query, hit.getContent(), hit.getScore()) + extraBoost;
+            RagChunkMatch existing = merged.get(key);
+            if (existing == null || lexicalScore > existing.getScore()) {
+                merged.put(key, new RagChunkMatch(hit.getDocId(), hit.getContent(), lexicalScore, hit.getChunkMetadata()));
+            }
+        }
+    }
+
+    private List<String> extractSectionTargets(String query) {
+        if (!StringUtils.hasText(query)) {
+            return List.of();
+        }
+        LinkedHashSet<String> targets = new LinkedHashSet<>();
+        for (String token : extractQuotedSegments(query)) {
+            String normalized = normalizeSectionTarget(token);
+            if (StringUtils.hasText(normalized) && looksLikeSectionTarget(normalized)) {
+                targets.add(normalized);
+            }
+        }
+        Matcher numberedMatcher = Pattern.compile("((?:[0-9]+(?:\\.[0-9]+)*\\)?)[^\\n,.;:!?]{1,120})").matcher(query);
+        while (numberedMatcher.find()) {
+            String token = normalizeSectionTarget(numberedMatcher.group(1));
+            if (StringUtils.hasText(token) && looksLikeSectionTarget(token)) {
+                targets.add(token);
+            }
+        }
+        return new ArrayList<>(targets);
+    }
+
+    private String normalizeSectionTarget(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        return value
+                .replace('`', ' ')
+                .replace('\u300a', ' ')
+                .replace('\u300b', ' ')
+                .replace('"', ' ')
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private List<String> extractDocumentTitleTargets(String query, List<String> sectionTargets) {
+        if (!StringUtils.hasText(query)) {
+            return List.of();
+        }
+        Set<String> sectionSet = new LinkedHashSet<>();
+        if (sectionTargets != null) {
+            for (String sectionTarget : sectionTargets) {
+                String normalized = normalizeSectionTarget(sectionTarget);
+                if (StringUtils.hasText(normalized)) {
+                    sectionSet.add(normalized);
+                }
+            }
+        }
+        LinkedHashSet<String> targets = new LinkedHashSet<>();
+        for (String token : extractQuotedSegments(query)) {
+            String normalized = normalizeSectionTarget(token);
+            if (!StringUtils.hasText(normalized) || sectionSet.contains(normalized) || looksLikeSectionTarget(normalized)) {
+                continue;
+            }
+            targets.add(normalized);
+        }
+        return new ArrayList<>(targets);
+    }
+
+    private List<String> extractQuotedSegments(String text) {
+        if (!StringUtils.hasText(text)) {
+            return List.of();
+        }
+        LinkedHashSet<String> segments = new LinkedHashSet<>();
+        collectQuotedSegments(text, segments, "\u300a", "\u300b");
+        collectQuotedSegments(text, segments, "\"", "\"");
+        collectQuotedSegments(text, segments, "\u201c", "\u201d");
+        return new ArrayList<>(segments);
+    }
+
+    private void collectQuotedSegments(String text, Set<String> segments, String open, String close) {
+        if (!StringUtils.hasText(text) || segments == null || !StringUtils.hasText(open) || !StringUtils.hasText(close)) {
+            return;
+        }
+        int start = 0;
+        while (start < text.length()) {
+            int openIdx = text.indexOf(open, start);
+            if (openIdx < 0) {
+                break;
+            }
+            int closeIdx = text.indexOf(close, openIdx + open.length());
+            if (closeIdx < 0) {
+                break;
+            }
+            String candidate = text.substring(openIdx + open.length(), closeIdx).trim();
+            if (candidate.length() >= 2 && candidate.length() <= 160) {
+                segments.add(candidate);
+            }
+            start = closeIdx + close.length();
+        }
+    }
+
+    private List<String> summarizeDocumentHits(List<RagDocumentHit> hits, int limit) {
+        if (hits == null || hits.isEmpty()) {
+            return List.of();
+        }
+        return hits.stream()
+                .limit(Math.max(1, limit))
+                .map(hit -> String.format("%s(score=%.3f)", hit.getTitle(), hit.getScore()))
+                .toList();
+    }
+
+    private List<String> summarizeChunkMatches(List<RagChunkMatch> hits, int limit) {
+        if (hits == null || hits.isEmpty()) {
+            return List.of();
+        }
+        return hits.stream()
+                .limit(Math.max(1, limit))
+                .map(hit -> {
+                    java.util.Map<String, Object> metadata = parseChunkMetadata(hit.getChunkMetadata());
+                    List<String> headings = metadataStringList(metadata, "headings");
+                    String headingText = headings.isEmpty() ? "-" : String.join(" > ", headings);
+                    return String.format("%s(score=%.3f, heading=%s)",
+                            hit.getDocId(), hit.getScore(), headingText);
+                })
+                .toList();
+    }
+
+    private boolean looksLikeSectionTarget(String value) {
+        if (!StringUtils.hasText(value)) {
+            return false;
+        }
+        String normalized = normalizeText(value);
+        return value.matches(".*\\d+(?:\\.\\d+)*.*")
+                || normalized.contains("\u8ba4\u8bc1")
+                || normalized.contains("\u8fd4\u56de\u7ed3\u6784")
+                || normalized.contains("\u603b\u89c8")
+                || normalized.contains("\u5165\u5e93\u6d41\u7a0b")
+                || normalized.contains("chunksize")
+                || normalized.contains("prompt context");
+    }
+
+    private boolean sectionHeadingExactMatch(String heading, String target) {
+        String normalizedHeading = normalizeSectionTarget(heading);
+        String normalizedTarget = normalizeSectionTarget(target);
+        if (!StringUtils.hasText(normalizedHeading) || !StringUtils.hasText(normalizedTarget)) {
+            return false;
+        }
+        return normalizeText(normalizedHeading).contains(normalizeText(normalizedTarget))
+                || normalizeText(normalizedTarget).contains(normalizeText(normalizedHeading));
+    }
+
+    private boolean sectionHeadingPartialMatch(String heading, String target) {
+        if (!StringUtils.hasText(heading) || !StringUtils.hasText(target)) {
+            return false;
+        }
+        List<String> keywords = extractKeywords(target);
+        if (keywords.isEmpty()) {
+            return false;
+        }
+        int hits = 0;
+        for (String keyword : keywords) {
+            if (containsIgnoreCase(heading, keyword)) {
+                hits++;
+            }
+        }
+        return hits >= Math.max(1, Math.min(2, keywords.size() / 2));
+    }
+
+    private double documentTitleScore(String query, RagDocumentHit hit) {
+        if (hit == null) {
+            return 0.0;
+        }
+        double score = Math.max(0.0, hit.getScore());
+        String title = hit.getTitle() == null ? "" : hit.getTitle();
+        String normalizedQuery = normalizeText(query);
+        String normalizedTitle = normalizeText(title);
+        if (StringUtils.hasText(normalizedQuery) && normalizedTitle.contains(normalizedQuery)) {
+            score += 0.45;
+        }
+        List<String> keywords = extractKeywords(query);
+        int hits = 0;
+        for (String keyword : keywords) {
+            if (containsIgnoreCase(title, keyword)) {
+                hits++;
+            }
+        }
+        if (!keywords.isEmpty()) {
+            score += Math.min(0.35, hits / (double) keywords.size() * 0.35);
+        }
+        if (title.contains(".pdf") || title.contains(".doc") || title.contains(".docx") || title.contains(".txt") || title.contains(".md")) {
+            score += 0.04;
+        }
+        return score;
+    }
+
+    private boolean isWholeDocumentIntent(String query) {
+        return shouldPreferWholeDocument(query);
+    }
+
+    private boolean shouldPreferWholeDocument(String query) {
+        if (!StringUtils.hasText(query)) {
+            return false;
+        }
+        String lower = query.toLowerCase();
+        boolean hasSummaryVerb = containsAny(lower,
+                "summary", "summarize", "overview", "whole document", "entire document", "whole file", "entire file",
+                "总结", "概括", "摘要", "总览", "整个文件", "整个文档", "全文", "整篇");
+        boolean hasFileHint = containsAny(lower,
+                "文件", "文档", "文件名", "文档名", "core content", "file");
+        boolean hasQuotedTitle = !extractQuotedSegments(query).isEmpty();
+        return hasSummaryVerb || (hasQuotedTitle && hasFileHint);
+    }
+
+    private boolean containsAny(String text, String... needles) {
+        if (!StringUtils.hasText(text) || needles == null || needles.length == 0) {
+            return false;
+        }
+        for (String needle : needles) {
+            if (StringUtils.hasText(needle) && text.contains(needle.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<RagDocumentHit> findWholeDocumentCandidates(Long userId, String query) {
+        List<String> titleTargets = extractDocumentTitleTargets(query, List.of());
+        if (titleTargets.isEmpty()) {
+            return findDocumentCandidates(userId, query);
+        }
+        java.util.Map<String, RagDocumentHit> merged = new java.util.LinkedHashMap<>();
+        for (String titleTarget : titleTargets) {
+            List<RagDocumentHit> hits = ragRepository.searchDocumentsByTitle(userId, titleTarget, 5);
+            for (RagDocumentHit hit : hits) {
+                if (hit == null || !StringUtils.hasText(hit.getDocId()) || !StringUtils.hasText(hit.getContent())) {
+                    continue;
+                }
+                double score = documentTitleScore(titleTarget, hit) + 0.35;
+                RagDocumentHit existing = merged.get(hit.getDocId());
+                if (existing == null || score > existing.getScore()) {
+                    merged.put(hit.getDocId(), new RagDocumentHit(hit.getDocId(), hit.getTitle(), hit.getContent(), score));
+                }
+            }
+        }
+        if (merged.isEmpty()) {
+            return findDocumentCandidates(userId, query);
+        }
+        List<RagDocumentHit> ranked = new ArrayList<>(merged.values());
+        ranked.sort(Comparator.comparingDouble(RagDocumentHit::getScore).reversed());
+        return ranked;
+    }
+
+    private String buildWholeDocumentContext(RagDocumentHit hit, String query) {
+        if (hit == null || !StringUtils.hasText(hit.getContent())) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("[Document] ").append(hit.getTitle() == null ? "Untitled" : hit.getTitle()).append("\n");
+        String outline = extractDocumentOutline(hit.getContent());
+        if (StringUtils.hasText(outline)) {
+            sb.append("[Outline]\n").append(outline).append("\n");
+        }
+        int budget = Math.max(properties.getContextMaxTokens(), properties.getChunkTokenSize() * 3);
+        int used = TokenCounter.estimateTokens(sb.toString());
+        List<String> selected = selectDocumentParagraphs(hit.getContent(), query, budget - used);
+        for (String paragraph : selected) {
+            if (!StringUtils.hasText(paragraph)) {
+                continue;
+            }
+            int tokens = TokenCounter.estimateTokens(paragraph);
+            if (tokens <= 0 || used + tokens > budget) {
+                continue;
+            }
+            sb.append("\n").append(paragraph.trim()).append("\n");
+            used += tokens;
+            if (used >= budget) {
+                break;
+            }
+        }
+        return sb.toString().trim();
+    }
+
+    private String extractDocumentOutline(String content) {
+        if (!StringUtils.hasText(content)) {
+            return "";
+        }
+        LinkedHashSet<String> lines = new LinkedHashSet<>();
+        for (String line : content.split("\n")) {
+            String trimmed = line == null ? "" : line.trim();
+            if (trimmed.matches("^#{1,6}\\s+.*") || trimmed.startsWith("[Section]")) {
+                lines.add(trimmed.replaceFirst("^#+\\s*", ""));
+            }
+            if (lines.size() >= 8) {
+                break;
+            }
+        }
+        return String.join("\n", lines);
+    }
+
+    private List<String> selectDocumentParagraphs(String content, String query, int tokenBudget) {
+        if (!StringUtils.hasText(content) || tokenBudget <= 0) {
+            return List.of();
+        }
+        List<SectionParagraph> paragraphs = splitDocumentParagraphs(content);
+        if (paragraphs.isEmpty()) {
+            return List.of(trimToTokenBudget(content, tokenBudget));
+        }
+        List<ParagraphCandidate> candidates = new ArrayList<>();
+        for (int i = 0; i < paragraphs.size(); i++) {
+            SectionParagraph paragraph = paragraphs.get(i);
+            if (paragraph == null || !StringUtils.hasText(paragraph.text())) {
+                continue;
+            }
+            double score = paragraphScore(query, paragraph.text(), paragraph.section(), i, paragraphs.size());
+            candidates.add(new ParagraphCandidate(paragraph.text(), score, i, paragraph.section()));
+        }
+        candidates.sort(Comparator.comparingDouble(ParagraphCandidate::score).reversed());
+        List<ParagraphCandidate> selected = new ArrayList<>();
+        selected.addAll(candidates.stream().filter(c -> c.index() == 0).limit(1).toList());
+        java.util.Set<String> coveredSections = new java.util.LinkedHashSet<>();
+        for (ParagraphCandidate candidate : selected) {
+            if (StringUtils.hasText(candidate.section())) {
+                coveredSections.add(candidate.section());
+            }
+        }
+        for (ParagraphCandidate candidate : candidates) {
+            if (selected.stream().anyMatch(existing -> existing.index() == candidate.index())) {
+                continue;
+            }
+            if (!StringUtils.hasText(candidate.section()) || coveredSections.contains(candidate.section())) {
+                continue;
+            }
+            selected.add(candidate);
+            coveredSections.add(candidate.section());
+            if (selected.size() >= 6) {
+                break;
+            }
+        }
+        for (ParagraphCandidate candidate : candidates) {
+            if (selected.stream().anyMatch(existing -> existing.index() == candidate.index())) {
+                continue;
+            }
+            long sameSectionCount = selected.stream()
+                    .filter(existing -> java.util.Objects.equals(existing.section(), candidate.section()))
+                    .count();
+            if (sameSectionCount >= 2) {
+                continue;
+            }
+            selected.add(candidate);
+            if (selected.size() >= 6) {
+                break;
+            }
+        }
+        selected.sort(Comparator.comparingInt(ParagraphCandidate::index));
+        List<String> result = new ArrayList<>();
+        int used = 0;
+        for (ParagraphCandidate candidate : selected) {
+            String trimmed = trimToTokenBudget(candidate.text(), tokenBudget - used);
+            int tokens = TokenCounter.estimateTokens(trimmed);
+            if (!StringUtils.hasText(trimmed) || tokens <= 0) {
+                continue;
+            }
+            result.add(trimmed);
+            used += tokens;
+            if (used >= tokenBudget) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    private List<SectionParagraph> splitDocumentParagraphs(String content) {
+        List<SectionParagraph> parts = new ArrayList<>();
+        String currentSection = "";
+        for (String part : content.split("\\n\\s*\\n")) {
+            String trimmed = part == null ? "" : part.trim();
+            if (!StringUtils.hasText(trimmed)) {
+                continue;
+            }
+            if (trimmed.startsWith("[Section]")) {
+                int lineBreak = trimmed.indexOf('\n');
+                String header = lineBreak > 0 ? trimmed.substring(0, lineBreak).trim() : trimmed;
+                currentSection = header.replaceFirst("^\\[Section]\\s*", "").trim();
+            } else if (trimmed.matches("^#{1,6}\\s+.*")) {
+                currentSection = trimmed.replaceFirst("^#{1,6}\\s*", "").trim();
+            }
+            parts.add(new SectionParagraph(trimmed, currentSection));
+        }
+        return parts;
+    }
+
+    private double paragraphScore(String query, String paragraph, String section, int index, int total) {
+        double score = 0.0;
+        String normalizedQuery = normalizeText(query);
+        String normalizedParagraph = normalizeText(paragraph);
+        if (StringUtils.hasText(normalizedQuery) && normalizedParagraph.contains(normalizedQuery)) {
+            score += 0.5;
+        }
+        List<String> keywords = extractKeywords(query);
+        int hits = 0;
+        for (String keyword : keywords) {
+            if (containsIgnoreCase(paragraph, keyword)) {
+                hits++;
+            }
+        }
+        if (!keywords.isEmpty()) {
+            score += Math.min(0.35, hits / (double) keywords.size() * 0.35);
+        }
+        if (index == 0) {
+            score += 0.22;
+        }
+        if (total > 1 && index == total - 1) {
+            score += 0.12;
+        }
+        if (paragraph.startsWith("#") || paragraph.startsWith("[Section]")) {
+            score += 0.08;
+        }
+        if (StringUtils.hasText(section)) {
+            if (containsIgnoreCase(section, query)) {
+                score += 0.18;
+            } else {
+                int sectionHits = 0;
+                for (String keyword : extractKeywords(query)) {
+                    if (containsIgnoreCase(section, keyword)) {
+                        sectionHits++;
+                    }
+                }
+                score += Math.min(0.12, sectionHits * 0.04);
+            }
+        }
+        return score;
     }
 
     private List<String> extractKeywords(String query) {
@@ -376,33 +1145,42 @@ public class RagServiceImpl implements RagService {
         return sb.toString().trim();
     }
 
-    private String buildContextFromMatches(List<RagChunkMatch> matches) {
+    private String buildContextFromMatches(List<RagChunkMatch> matches, RagProperties.Search search) {
         if (matches == null || matches.isEmpty()) {
             return "";
         }
         StringBuilder sb = new StringBuilder();
         Set<String> seen = new LinkedHashSet<>();
+        java.util.Map<String, Integer> docUsage = new java.util.HashMap<>();
         int maxTokens = Math.max(properties.getChunkTokenSize(), properties.getContextMaxTokens());
+        int maxPerDoc = search != null && search.getMaxChunksPerDocument() > 0
+                ? search.getMaxChunksPerDocument()
+                : 2;
         int usedTokens = 0;
         for (RagChunkMatch match : matches) {
             if (match == null || !StringUtils.hasText(match.getContent())) {
                 continue;
             }
             String content = match.getContent().trim();
-            if (seen.contains(content)) {
+            String rendered = renderChunkForContext(match);
+            if (seen.contains(rendered)) {
                 continue;
             }
-            seen.add(content);
-            int contentTokens = TokenCounter.estimateTokens(content);
+            String docId = match.getDocId() == null ? "" : match.getDocId();
+            if (docUsage.getOrDefault(docId, 0) >= maxPerDoc) {
+                continue;
+            }
+            seen.add(rendered);
+            int contentTokens = TokenCounter.estimateTokens(rendered);
             if (contentTokens <= 0) {
                 continue;
             }
             if (usedTokens >= maxTokens) {
                 break;
             }
-            String next = content;
+            String next = rendered;
             if (usedTokens + contentTokens > maxTokens) {
-                next = trimToTokenBudget(content, maxTokens - usedTokens);
+                next = trimToTokenBudget(rendered, maxTokens - usedTokens);
                 contentTokens = TokenCounter.estimateTokens(next);
             }
             if (!StringUtils.hasText(next) || contentTokens <= 0) {
@@ -413,6 +1191,7 @@ public class RagServiceImpl implements RagService {
             }
             sb.append(next);
             usedTokens += contentTokens;
+            docUsage.merge(docId, 1, Integer::sum);
         }
         return sb.toString().trim();
     }
@@ -827,8 +1606,11 @@ public class RagServiceImpl implements RagService {
             if (!StringUtils.hasText(name) || bytes == null || bytes.length == 0) {
                 continue;
             }
-            String ocrText = ocrService.extractText(bytes, name, "image/*");
-            if (StringUtils.hasText(ocrText)) {
+            if (!ragOcrOptimizer.shouldProcessImage(name, bytes)) {
+                continue;
+            }
+            String ocrText = ragOcrOptimizer.cleanOcrText(ocrService.extractText(bytes, name, "image/*"));
+            if (ragOcrOptimizer.isUsefulOcrText(ocrText)) {
                 ocrMap.put(name.toLowerCase(), ocrText.trim());
             }
         }
@@ -969,10 +1751,11 @@ public class RagServiceImpl implements RagService {
 
     private String normalizeQueryClean(String query) {
         String trimmed = query == null ? "" : query.trim();
-        trimmed = trimmed.replaceAll("[“”\"'‘’、，,。；;：:！？!?（）()【】\\[\\]<>《》]", " ");
+        trimmed = trimmed.replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}\\u4E00-\\u9FFF]+", " ");
         trimmed = trimmed.replaceAll("\\s+", " ").trim();
         String[] prefixes = {
-                "介绍一个", "介绍一下", "介绍", "什么是", "请介绍", "讲一个", "讲讲", "说明一个", "解释一个", "讲解一个"
+                "\u4ecb\u7ecd\u4e00\u4e0b", "\u4ecb\u7ecd\u4e00\u4e2a", "\u4ecb\u7ecd", "\u4ec0\u4e48\u662f", "\u8bf7\u4ecb\u7ecd", "\u8bb2\u4e00\u4e0b", "\u8bb2\u8bb2", "\u8bf4\u660e\u4e00\u4e0b", "\u89e3\u91ca\u4e00\u4e0b", "\u8bf7\u89e3\u91ca",
+                "\u8bf7\u603b\u7ed3", "\u603b\u7ed3\u4e00\u4e0b", "\u603b\u7ed3", "\u6982\u62ec\u4e00\u4e0b", "\u6982\u62ec", "\u6839\u636e\u6587\u4ef6\u540d", "\u6839\u636e\u6587\u6863\u540d"
         };
         for (String prefix : prefixes) {
             if (trimmed.startsWith(prefix)) {
@@ -988,9 +1771,10 @@ public class RagServiceImpl implements RagService {
             return List.of();
         }
         Set<String> stopwords = Set.of(
-                "介绍", "介绍一个", "介绍一下", "讲一个", "讲讲", "说明", "说明一个", "解释", "解释一个",
-                "如何", "是什么", "什么是", "是否", "可以", "需要", "应该", "有没有", "怎么",
-                "哪个", "哪些", "主要", "内容", "信息", "相关", "问题", "存在", "系统"
+                "\u4ecb\u7ecd", "\u4ecb\u7ecd\u4e00\u4e0b", "\u4ecb\u7ecd\u4e00\u4e2a", "\u8bb2\u4e00\u4e0b", "\u8bb2\u8bb2", "\u8bf4\u660e", "\u8bf4\u660e\u4e00\u4e0b", "\u89e3\u91ca", "\u89e3\u91ca\u4e00\u4e0b",
+                "\u5982\u4f55", "\u4ec0\u4e48", "\u4ec0\u4e48\u662f", "\u662f\u5426", "\u53ef\u4ee5", "\u9700\u8981", "\u5e94\u8be5", "\u6709\u6ca1\u6709", "\u600e\u4e48",
+                "\u54ea\u4e2a", "\u54ea\u4e9b", "\u4e3b\u8981", "\u5185\u5bb9", "\u4fe1\u606f", "\u76f8\u5173", "\u95ee\u9898", "\u5b58\u5728", "\u7cfb\u7edf",
+                "\u8bf7", "\u603b\u7ed3", "\u603b\u7ed3\u4e00\u4e0b", "\u6982\u62ec", "\u6982\u62ec\u4e00\u4e0b", "\u6587\u4ef6\u540d", "\u6587\u6863\u540d", "\u6838\u5fc3"
         );
         List<String> filtered = new ArrayList<>();
         for (String keyword : keywords) {
@@ -1066,7 +1850,7 @@ public class RagServiceImpl implements RagService {
             for (int i = 0; i < selectedCandidates.size(); i++) {
                 RagChunkCandidate c = selectedCandidates.get(i);
                 String content = c.getId() == null ? null : contentMap.get(c.getId());
-                selected.add(new RagChunkMatch(c.getDocId(), content, selectedScores.get(i)));
+                selected.add(new RagChunkMatch(c.getDocId(), content, selectedScores.get(i), c.getChunkMetadata()));
             }
         }
         return selected;
@@ -1103,8 +1887,114 @@ public class RagServiceImpl implements RagService {
         return dot / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
+    private String serializeChunkMetadata(PreparedRagChunk chunk) {
+        try {
+            java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+            metadata.put("blockType", chunk.getBlockType());
+            metadata.put("headings", chunk.getHeadings());
+            metadata.put("ordinal", chunk.getOrdinal());
+            metadata.put("tokenCount", chunk.getTokenCount());
+            return objectMapper.writeValueAsString(metadata);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String renderChunkForContext(RagChunkMatch match) {
+        if (match == null || !StringUtils.hasText(match.getContent())) {
+            return "";
+        }
+        String content = match.getContent().trim();
+        java.util.Map<String, Object> metadata = parseChunkMetadata(match.getChunkMetadata());
+        Object headingsObj = metadata.get("headings");
+        if (headingsObj instanceof List<?> headings && !headings.isEmpty()) {
+            String section = headings.stream().map(String::valueOf).filter(StringUtils::hasText).reduce((a, b) -> a + " > " + b).orElse("");
+            if (StringUtils.hasText(section) && !content.startsWith("[Section]")) {
+                return "[Section] " + section + "\n" + content;
+            }
+        }
+        return content;
+    }
+
+    private java.util.Map<String, Object> parseChunkMetadata(String chunkMetadata) {
+        if (!StringUtils.hasText(chunkMetadata)) {
+            return java.util.Map.of();
+        }
+        try {
+            return objectMapper.readValue(chunkMetadata, new TypeReference<java.util.Map<String, Object>>() {});
+        } catch (Exception e) {
+            return java.util.Map.of();
+        }
+    }
+
+    private String metadataString(java.util.Map<String, Object> metadata, String key) {
+        if (metadata == null || key == null) {
+            return null;
+        }
+        Object value = metadata.get(key);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private Integer metadataInt(java.util.Map<String, Object> metadata, String key) {
+        if (metadata == null || key == null) {
+            return null;
+        }
+        Object value = metadata.get(key);
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private List<String> metadataStringList(java.util.Map<String, Object> metadata, String key) {
+        if (metadata == null || key == null) {
+            return List.of();
+        }
+        Object value = metadata.get(key);
+        if (!(value instanceof List<?> list) || list.isEmpty()) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (Object item : list) {
+            if (item != null) {
+                String text = String.valueOf(item).trim();
+                if (!text.isEmpty()) {
+                    result.add(text);
+                }
+            }
+        }
+        return result;
+    }
+
     private double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private String hashContent(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest((content == null ? "" : content).getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(bytes.length * 2);
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Hash content failed", e);
+        }
+    }
+
+    private record ParagraphCandidate(String text, double score, int index, String section) {
+    }
+
+    private record SectionParagraph(String text, String section) {
     }
 }
 

@@ -4,6 +4,7 @@ import com.auth0.jwt.interfaces.DecodedJWT;
 import com.harmony.backend.common.constant.RequestAttributeConst;
 import com.harmony.backend.common.entity.User;
 import com.harmony.backend.common.mapper.UserMapper;
+import com.harmony.backend.common.util.AuthCookieService;
 import com.harmony.backend.common.util.JwtUtil;
 import com.harmony.backend.common.util.RequestUtils;
 import com.harmony.backend.modules.user.service.UserSecurityService;
@@ -34,6 +35,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtUtil jwtUtil;
     private final UserMapper userMapper;
     private final UserSecurityService userSecurityService;
+    private final AuthCookieService authCookieService;
 
     @Override
     protected boolean shouldNotFilterAsyncDispatch() {
@@ -48,7 +50,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
-        String token = RequestUtils.extractToken(request);
+        String token = RequestUtils.extractBearerToken(request);
+        if (!StringUtils.hasText(token)) {
+            token = authCookieService.resolveAccessToken(request);
+        }
         if (!StringUtils.hasText(token)) {
             filterChain.doFilter(request, response);
             return;

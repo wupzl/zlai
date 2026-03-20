@@ -9,7 +9,7 @@ import com.harmony.backend.common.response.PageResult;
 import java.util.List;
 
 public interface AgentService extends IService<Agent> {
-    List<String> validateTools(List<String> tools);
+    List<String> validateSkills(List<String> skills);
 
     PageResult<AgentVO> listMine(Long userId, int page, int size);
 

@@ -3,6 +3,8 @@ package com.harmony.backend.ai.agent.controller;
 import com.harmony.backend.ai.agent.controller.request.AgentUpsertRequest;
 import com.harmony.backend.ai.agent.controller.response.AgentVO;
 import com.harmony.backend.ai.agent.service.AgentService;
+import com.harmony.backend.ai.skill.AgentSkillDefinition;
+import com.harmony.backend.ai.skill.AgentSkillRegistry;
 import com.harmony.backend.ai.tool.AgentToolDefinition;
 import com.harmony.backend.ai.tool.AgentToolRegistry;
 import com.harmony.backend.ai.tool.ToolExecutionRequest;
@@ -26,11 +28,17 @@ public class AgentController {
 
     private final AgentService agentService;
     private final AgentToolRegistry toolRegistry;
+    private final AgentSkillRegistry skillRegistry;
     private final ToolExecutor toolExecutor;
 
     @GetMapping("/tools")
     public ApiResponse<List<AgentToolDefinition>> listTools() {
         return ApiResponse.success(toolRegistry.listAll());
+    }
+
+    @GetMapping("/skills")
+    public ApiResponse<List<AgentSkillDefinition>> listSkills() {
+        return ApiResponse.success(skillRegistry.listAll());
     }
 
     @PostMapping("/tools/execute")

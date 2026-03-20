@@ -2,7 +2,7 @@ package com.harmony.backend.common.exception;
 
 public class BusinessException extends RuntimeException {
 
-    private Integer code;
+    private Integer code = 400;
 
     public BusinessException(String message) {
         super(message);

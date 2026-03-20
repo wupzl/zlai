@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    password: ${SPRING_DATASOURCE_PASSWORD:${MYSQL_ROOT_PASSWORD:123456}}
+
+app:
+  user:
+    default-token-balance: ${APP_USER_DEFAULT_TOKEN_BALANCE:200000}
+  tools:
+    search:
+      bocha-enabled: ${APP_TOOLS_SEARCH_BOCHA_ENABLED:${BOCHA_ENABLED:true}}
+      baidu-enabled: ${APP_TOOLS_SEARCH_BAIDU_ENABLED:${BAIDU_ENABLED:true}}
+  rag:
+    ocr:
+      enabled: ${APP_RAG_OCR_ENABLED:true}

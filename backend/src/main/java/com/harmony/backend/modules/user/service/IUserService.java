@@ -10,6 +10,7 @@ import com.harmony.backend.modules.user.controller.response.TokenResponse;
 import com.harmony.backend.modules.user.controller.response.UserInfoVO;
 import com.harmony.backend.common.entity.User;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -32,11 +33,11 @@ public interface IUserService extends IService<User> {
 
     UserInfoVO register(RegisterRequest registerRequest);
 
-    LoginResponse login(LoginRequest loginRequest, HttpServletRequest request);
+    LoginResponse login(LoginRequest loginRequest, HttpServletRequest request, HttpServletResponse response);
 
-    TokenResponse refreshToken(String refreshToken, HttpServletRequest request);
+    TokenResponse refreshToken(String refreshToken, HttpServletRequest request, HttpServletResponse response);
 
-    boolean logout(String refreshToken);
+    boolean logout(String refreshToken, String accessToken);
 
     boolean updateUserInfo(Long currentUserId, UserUpdateRequest userUpdateDTO);
 

@@ -1,5 +1,7 @@
 package com.harmony.backend.modules.chat.prompt;
 
+import com.harmony.backend.ai.skill.AgentSkillDefinition;
+import com.harmony.backend.ai.skill.AgentSkillRegistry;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.harmony.backend.ai.tool.AgentToolDefinition;
@@ -17,6 +19,7 @@ public class ChatPromptService {
 
     private final ObjectMapper objectMapper;
     private final AgentToolRegistry toolRegistry;
+    private final AgentSkillRegistry skillRegistry;
 
     public String generateSessionTitle(String prompt) {
         return buildTitle(prompt);
@@ -33,11 +36,11 @@ public class ChatPromptService {
         if (instructions == null || instructions.isBlank()) {
             return null;
         }
-        String toolsBlock = buildToolsBlock(agent.getTools());
-        if (toolsBlock == null) {
+        String skillsBlock = buildSkillsBlock(agent.getSkills());
+        if (skillsBlock == null) {
             return instructions;
         }
-        return instructions + "\n\n" + toolsBlock;
+        return instructions + "\n\n" + skillsBlock;
     }
 
     public String mergeSystemPrompt(String basePrompt, String ragContext) {
@@ -259,6 +262,31 @@ public class ChatPromptService {
                 sb.append(" For current time queries, use tool datetime with timezone (e.g. Asia/Shanghai).");
             }
             sb.append(" Do not use tools that are not listed.");
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String buildSkillsBlock(String skillsJson) {
+        if (skillsJson == null || skillsJson.isBlank()) {
+            return null;
+        }
+        try {
+            List<String> skills = objectMapper.readValue(skillsJson, new TypeReference<List<String>>() {});
+            if (skills == null || skills.isEmpty()) {
+                return null;
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("Available skills (call with JSON ONLY):\n");
+            for (String key : skills) {
+                AgentSkillDefinition def = skillRegistry.get(key);
+                if (def != null) {
+                    sb.append("- ").append(def.getKey()).append(": ").append(def.getDescription()).append("\n");
+                }
+            }
+            sb.append("When using a skill, respond ONLY with JSON: {\"skill\":\"<key>\",\"input\":\"...\"}.");
+            sb.append(" Skills are executed by backend-approved tools only.");
             return sb.toString();
         } catch (Exception e) {
             return null;

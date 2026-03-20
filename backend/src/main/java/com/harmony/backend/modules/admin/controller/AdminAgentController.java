@@ -45,7 +45,7 @@ public class AdminAgentController {
     public ResponseEntity<byte[]> exportAgents(@RequestParam(required = false) String keyword) {
         List<AgentVO> agents = agentService.listAll(1, 10000, keyword, null).getContent();
         StringBuilder sb = new StringBuilder();
-        sb.append("agent_id,name,model,user_id,is_public,request_public,multi_agent,tools,created_at,updated_at\n");
+        sb.append("agent_id,name,model,user_id,is_public,request_public,multi_agent,skills,created_at,updated_at\n");
         for (AgentVO a : agents) {
             sb.append(csv(a.getAgentId()))
               .append(',').append(csv(a.getName()))
@@ -54,7 +54,7 @@ public class AdminAgentController {
               .append(',').append(csv(a.getIsPublic()))
               .append(',').append(csv(a.getRequestPublic()))
               .append(',').append(csv(a.getMultiAgent()))
-              .append(',').append(csv(a.getTools()))
+              .append(',').append(csv(a.getSkills()))
               .append(',').append(csv(a.getCreatedAt()))
               .append(',').append(csv(a.getUpdatedAt()))
               .append('\n');

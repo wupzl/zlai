@@ -29,7 +29,7 @@
 </template>
 
 <script>
-import { apiRequest, setToken, setRefreshToken, setUserInfo } from "../api";
+import { apiRequest, setUserInfo } from "../api";
 
 export default {
   name: "UserAuthView",
@@ -47,8 +47,6 @@ export default {
           method: "POST",
           body: JSON.stringify(this.login)
         });
-        setToken(data.accessToken);
-        setRefreshToken(data.refreshToken);
         setUserInfo(data.userInfo || null);
         this.status = "Login success";
         this.$router.push("/app/chat");

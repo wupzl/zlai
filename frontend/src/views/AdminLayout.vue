@@ -18,6 +18,7 @@
         <RouterLink class="nav-item" to="/admin/users">User Management</RouterLink>
         <RouterLink class="nav-item" to="/admin/gpts">GPT Management</RouterLink>
         <RouterLink class="nav-item" to="/admin/agents">Agent Management</RouterLink>
+        <RouterLink class="nav-item" to="/admin/skills">Skill Management</RouterLink>
         <RouterLink class="nav-item" to="/admin/rag">RAG Management</RouterLink>
         <RouterLink class="nav-item" to="/admin/chats">Chat Monitoring</RouterLink>
         <RouterLink class="nav-item" to="/admin/logs">System Logs</RouterLink>
@@ -45,7 +46,7 @@
 </template>
 
 <script>
-import { clearAuthState } from "../api";
+import { logout as logoutRequest } from "../api";
 
 export default {
   name: "AdminLayout",
@@ -58,8 +59,8 @@ export default {
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed;
     },
-    logout() {
-      clearAuthState();
+    async logout() {
+      await logoutRequest();
       this.$router.push("/auth/admin");
     }
   }

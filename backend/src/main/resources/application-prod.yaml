@@ -1,0 +1,14 @@
+app:
+  auth:
+    cookies:
+      secure: ${APP_AUTH_COOKIES_SECURE:true}
+      same-site: ${APP_AUTH_COOKIES_SAME_SITE:Lax}
+  llm:
+    mock-enabled: false
+  tools:
+    search:
+      bocha-enabled: ${APP_TOOLS_SEARCH_BOCHA_ENABLED:false}
+      baidu-enabled: ${APP_TOOLS_SEARCH_BAIDU_ENABLED:false}
+  rag:
+    ocr:
+      enabled: ${APP_RAG_OCR_ENABLED:false}

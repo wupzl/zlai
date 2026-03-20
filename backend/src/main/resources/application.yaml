@@ -32,7 +32,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/zl-ai2?useSSL=false&serverTimezone=Asia/Shanghai}
     username: ${SPRING_DATASOURCE_USERNAME:${MYSQL_USER:root}}
-    password: ${SPRING_DATASOURCE_PASSWORD:${MYSQL_ROOT_PASSWORD:123456}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${MYSQL_ROOT_PASSWORD:}}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 10
@@ -74,7 +74,15 @@ mybatis-plus:
 # Application custom configuration
 app:
   user:
-    default-token-balance: 200000
+    default-token-balance: ${APP_USER_DEFAULT_TOKEN_BALANCE:50000}
+  auth:
+    cookies:
+      access-token-name: ${APP_AUTH_COOKIES_ACCESS_TOKEN_NAME:zlai_access_token}
+      refresh-token-name: ${APP_AUTH_COOKIES_REFRESH_TOKEN_NAME:zlai_refresh_token}
+      path: ${APP_AUTH_COOKIES_PATH:/}
+      domain: ${APP_AUTH_COOKIES_DOMAIN:}
+      secure: ${APP_AUTH_COOKIES_SECURE:false}
+      same-site: ${APP_AUTH_COOKIES_SAME_SITE:Lax}
   cors:
     allowed-origin-patterns:
       - "http://localhost:*"
@@ -202,23 +210,32 @@ app:
       serpapi-engine: ${APP_TOOLS_SEARCH_SERPAPI_ENGINE:${SERPAPI_ENGINE:baidu}}
       wikipedia-enabled: ${APP_TOOLS_SEARCH_WIKIPEDIA_ENABLED:${WIKIPEDIA_ENABLED:false}}
       baike-enabled: ${APP_TOOLS_SEARCH_BAIKE_ENABLED:${BAIKE_ENABLED:false}}
-      bocha-enabled: ${APP_TOOLS_SEARCH_BOCHA_ENABLED:${BOCHA_ENABLED:true}}
-      baidu-enabled: ${APP_TOOLS_SEARCH_BAIDU_ENABLED:${BAIDU_ENABLED:true}}
+      bocha-enabled: ${APP_TOOLS_SEARCH_BOCHA_ENABLED:${BOCHA_ENABLED:false}}
+      baidu-enabled: ${APP_TOOLS_SEARCH_BAIDU_ENABLED:${BAIDU_ENABLED:false}}
       bocha-api-key: ${APP_TOOLS_SEARCH_BOCHA_API_KEY:${BOCHA_API_KEY:}}
       bocha-endpoint: ${APP_TOOLS_SEARCH_BOCHA_ENDPOINT:${BOCHA_ENDPOINT:https://api.bocha.cn/v1/web-search}}
       wikipedia-proxy-enabled: ${APP_TOOLS_SEARCH_WIKIPEDIA_PROXY_ENABLED:${WIKIPEDIA_PROXY_ENABLED:false}}
       wikipedia-proxy-url: ${APP_TOOLS_SEARCH_WIKIPEDIA_PROXY_URL:${WIKIPEDIA_PROXY_URL:}}
       wikipedia-user-agent: "${APP_TOOLS_SEARCH_WIKIPEDIA_USER_AGENT:${WIKIPEDIA_USER_AGENT:zlAI/1.0 (contact: tomchares0@gmail.com)}}"
+  memory:
+    summary-model: deepseek-chat
+    summary-refresh-every-messages: 6
+    summary-min-refresh-minutes: 15
+    user-memory-model-enabled: true
+    user-memory-min-refresh-minutes: 180
+    user-memory-min-prompt-length: 18
+    task-state-model-enabled: true
+    task-state-min-refresh-seconds: 45
   rag:
     ingest-filepath-enabled: false
+    ingest-filepath-admin-only: true
+    ingest-filepath-allowed-roots: []
     remote-images:
       max-count: 20
       max-bytes: 5242880
-      connect-timeout-ms: 5000
-      read-timeout-ms: 8000
     vector-size: 1536
     ocr:
-      enabled: true
+      enabled: ${APP_RAG_OCR_ENABLED:false}
       tessdata-path: "${TESSDATA_PATH:}"
       language: "eng+chi_sim"
       default-user-quota: 200
@@ -234,6 +251,17 @@ app:
     chunk-token-overlap: 80
     context-max-tokens: 1800
     snippet-max-tokens: 240
+    grounding:
+      enabled: true
+      min-grounded-score: 0.70
+      min-partial-score: 0.30
+      min-citation-count: 1
+      max-citation-count: 3
+      allow-partial-answer: true
+      show-grounding-hint: true
+      policy-version: v1
+      insufficient-evidence-message: "No relevant context found in the knowledge base. Please refine your question or add documents."
+      partial-answer-prefix: "I found limited support in the knowledge base. The following answer may be partial:\n\n"
     search:
       strategy: mmr
       min-score: 0.2
@@ -248,6 +276,11 @@ app:
       base-url: ${APP_RAG_EMBEDDING_BASE_URL:${EMBEDDING_BASE_URL:https://api.gptsapi.net/v1}}
       api-key: ${APP_RAG_EMBEDDING_API_KEY:${EMBEDDING_API_KEY:}}
       model: ${APP_RAG_EMBEDDING_MODEL:${EMBEDDING_MODEL:text-embedding-3-small}}
+  network:
+    client-ip:
+      trust-forward-headers: false
+      connect-timeout-ms: 5000
+      read-timeout-ms: 8000
   rate-limit:
     global:
       enabled: true

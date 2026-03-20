@@ -9,6 +9,7 @@ import com.harmony.backend.ai.agent.controller.request.AgentUpsertRequest;
 import com.harmony.backend.ai.agent.controller.response.AgentVO;
 import com.harmony.backend.ai.agent.model.TeamAgentConfig;
 import com.harmony.backend.ai.agent.service.AgentService;
+import com.harmony.backend.ai.skill.AgentSkillRegistry;
 import com.harmony.backend.ai.tool.AgentToolRegistry;
 import com.harmony.backend.common.entity.Agent;
 import com.harmony.backend.common.entity.Message;
@@ -35,23 +36,24 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements AgentService {
 
     private final AgentToolRegistry toolRegistry;
+    private final AgentSkillRegistry skillRegistry;
     private final ObjectMapper objectMapper;
     private final SessionMapper sessionMapper;
     private final MessageMapper messageMapper;
 
     @Override
-    public List<String> validateTools(List<String> tools) {
-        if (tools == null) {
+    public List<String> validateSkills(List<String> skills) {
+        if (skills == null) {
             return List.of();
         }
         List<String> normalized = new ArrayList<>();
-        for (String tool : tools) {
-            if (!StringUtils.hasText(tool)) {
+        for (String skill : skills) {
+            if (!StringUtils.hasText(skill)) {
                 continue;
             }
-            String key = tool.trim();
-            if (!toolRegistry.isValidKey(key)) {
-                throw new BusinessException(400, "Invalid tool: " + key);
+            String key = skill.trim();
+            if (!skillRegistry.isValidKey(key)) {
+                throw new BusinessException(400, "Invalid skill: " + key);
             }
             normalized.add(key);
         }
@@ -133,7 +135,7 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
             throw new BusinessException(401, "Unauthorized");
         }
         validateRequest(request);
-        List<String> tools = validateTools(request.getTools());
+        List<String> skills = validateSkills(request.getSkills());
         boolean requestPublic = Boolean.TRUE.equals(request.getRequestPublic());
         TeamVisibilityRequirement requirement = resolveTeamVisibilityRequirement(
                 Boolean.TRUE.equals(request.getMultiAgent()),
@@ -150,7 +152,7 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         agent.setModel(resolveModel(request.getModel()));
         agent.setToolModel(trimOrNull(request.getToolModel()));
         agent.setUserId(userId);
-        agent.setTools(writeTools(tools));
+        agent.setSkills(writeSkills(skills));
         agent.setMultiAgent(Boolean.TRUE.equals(request.getMultiAgent()));
         agent.setTeamAgentIds(writeTeamAgents(teamResult.teamIds));
         agent.setTeamConfig(writeTeamConfig(teamResult.teamConfigs));
@@ -158,7 +160,7 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         agent.setRequestPublic(!isAdmin && requestPublic);
 
         baseMapper.insert(agent);
-        return toVo(agent, tools);
+        return toVo(agent, skills);
     }
 
     @Override
@@ -194,9 +196,9 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
                 finalMultiAgent, finalIsPublic, finalRequestPublic);
 
         boolean updated = applyUpdates(agent, request);
-        if (request.getTools() != null) {
-            List<String> tools = validateTools(request.getTools());
-            agent.setTools(writeTools(tools));
+        if (request.getSkills() != null) {
+            List<String> skills = validateSkills(request.getSkills());
+            agent.setSkills(writeSkills(skills));
             updated = true;
         }
         if (request.getTeamAgentIds() != null || request.getTeamConfigs() != null) {
@@ -376,10 +378,10 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
     }
 
     private AgentVO toVo(Agent agent) {
-        return toVo(agent, readTools(agent.getTools()));
+        return toVo(agent, readSkills(agent.getSkills()));
     }
 
-    private AgentVO toVo(Agent agent, List<String> tools) {
+    private AgentVO toVo(Agent agent, List<String> skills) {
         AgentVO vo = new AgentVO();
         vo.setAgentId(agent.getAgentId());
         vo.setName(agent.getName());
@@ -388,7 +390,7 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         vo.setModel(agent.getModel());
         vo.setToolModel(agent.getToolModel());
         vo.setUserId(agent.getUserId());
-        vo.setTools(tools);
+        vo.setSkills(skills);
         vo.setMultiAgent(Boolean.TRUE.equals(agent.getMultiAgent()));
         vo.setTeamAgentIds(readTeamAgents(agent.getTeamAgentIds()));
         vo.setTeamConfigs(readTeamConfig(agent.getTeamConfig()));
@@ -399,20 +401,20 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         return vo;
     }
 
-    private String writeTools(List<String> tools) {
+    private String writeSkills(List<String> skills) {
         try {
-            return objectMapper.writeValueAsString(tools == null ? List.of() : tools);
+            return objectMapper.writeValueAsString(skills == null ? List.of() : skills);
         } catch (Exception e) {
-            throw new BusinessException(500, "Serialize tools failed");
+            throw new BusinessException(500, "Serialize skills failed");
         }
     }
 
-    private List<String> readTools(String toolsJson) {
-        if (!StringUtils.hasText(toolsJson)) {
+    private List<String> readSkills(String skillsJson) {
+        if (!StringUtils.hasText(skillsJson)) {
             return List.of();
         }
         try {
-            return objectMapper.readValue(toolsJson, new TypeReference<List<String>>() {});
+            return objectMapper.readValue(skillsJson, new TypeReference<List<String>>() {});
         } catch (Exception e) {
             return List.of();
         }
@@ -436,7 +438,7 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
                 TeamAgentConfig copy = new TeamAgentConfig();
                 copy.setAgentId(id);
                 copy.setRole(trimOrNull(cfg.getRole()));
-                copy.setTools(List.of());
+                copy.setSkills(List.of());
                 normalizedConfigs.add(copy);
             }
         } else if (teamAgentIds != null) {

@@ -3,7 +3,7 @@
     <header class="panel-header">
       <div>
         <h2>Agents</h2>
-        <div class="meta">Create and manage agents with tools</div>
+        <div class="meta">Create and manage agents with skills</div>
       </div>
       <button class="cta" @click="loadAll">Refresh</button>
     </header>
@@ -13,7 +13,7 @@
         <div class="card-head">
           <div>
             <h3>Create Agent</h3>
-            <div class="meta">Configure tools and multi-agent behavior.</div>
+            <div class="meta">Configure skills and multi-agent behavior.</div>
           </div>
         </div>
         <input v-model="form.name" placeholder="Name" />
@@ -27,11 +27,11 @@
           <div class="hint">If you need multiple system prompts, separate them with a line containing only <b>---</b>. They will be merged in order.</div>
         </div>
         <div class="field-group">
-          <div class="field-label">Tools</div>
-          <div class="hint">Tools can call external services or the LLM. LLM-based tools will be billed separately.</div>
+          <div class="field-label">Skills</div>
+          <div class="hint">Skills are task-oriented abilities built on approved backend tools.</div>
           <div class="tool-list">
-            <label v-for="t in tools" :key="t.key">
-              <input type="checkbox" :value="t.key" v-model="form.tools" />
+            <label v-for="t in skills" :key="t.key">
+              <input type="checkbox" :value="t.key" v-model="form.skills" />
               {{ t.name }}
             </label>
           </div>
@@ -70,7 +70,7 @@
             </label>
           </div>
           <div class="card" v-if="form.teamAgentIds.length">
-            <div class="card-title">Team Roles & Tools</div>
+            <div class="card-title">Team Roles & Skills</div>
             <div v-for="agentId in form.teamAgentIds" :key="agentId" class="field-group">
               <div class="field-label">Agent {{ agentName(agentId) }}</div>
               <input v-model="teamConfigMap[agentId].role" placeholder="Role (e.g. Researcher, Critic)" />
@@ -144,7 +144,7 @@
       </div>
       <div class="detail-body">
         <div class="detail-row"><span>Model</span><span>{{ detail.model || "Default model" }}</span></div>
-        <div class="detail-row"><span>Billing</span><span>Tools that call the LLM are billed separately.</span></div>
+        <div class="detail-row"><span>Billing</span><span>Skills may invoke backend tools or LLM capabilities and can be billed separately.</span></div>
         <div class="detail-row"><span>Visibility</span><span>{{ detail.isPublic ? "Public" : (detail.requestPublic ? "Requested" : "Private") }}</span></div>
         <div class="detail-row"><span>Mode</span><span>{{ detail.multiAgent ? "Multi-agent" : "Single-agent" }}</span></div>
         <div class="detail-block" v-if="detail.teamAgentIds && detail.teamAgentIds.length">
@@ -155,15 +155,15 @@
           <div class="detail-label">Team Roles</div>
           <div class="detail-content">
             <div v-for="cfg in detail.teamConfigs" :key="cfg.agentId">
-              {{ cfg.agentId }} - {{ cfg.role || "member" }} - {{ (cfg.tools || []).join(", ") }}
+              {{ cfg.agentId }} - {{ cfg.role || "member" }} - {{ (cfg.skills || []).join(", ") }}
             </div>
           </div>
         </div>
         <div class="detail-block" v-if="detail.teamAgentIds && detail.teamAgentIds.length">
-          <div class="detail-label">Team Tools</div>
+          <div class="detail-label">Team Skills</div>
           <div class="detail-content">
             <div v-for="id in detail.teamAgentIds" :key="id">
-              {{ id }} - {{ toolsForAgent(id) }}
+              {{ id }} - {{ skillsForAgent(id) }}
             </div>
           </div>
         </div>
@@ -171,14 +171,14 @@
           <div class="detail-label">System Instructions</div>
           <div class="detail-content">{{ detail.instructions || "No instructions" }}</div>
         </div>
-        <div class="detail-block" v-if="detail.tools && detail.tools.length">
-          <div class="detail-label">Tools</div>
-          <div class="detail-content">{{ detail.tools.join(", ") }}</div>
+        <div class="detail-block" v-if="detail.skills && detail.skills.length">
+          <div class="detail-label">Skills</div>
+          <div class="detail-content">{{ detail.skills.join(", ") }}</div>
         </div>
         <div class="detail-block">
           <div class="detail-label">Billing Note</div>
           <div class="detail-content">
-            Tool usage is billed separately. Tool Model is selected in the chat session settings.
+            Skill execution may invoke backend tools. Tool Model is selected in the chat session settings.
           </div>
         </div>
       </div>
@@ -198,7 +198,7 @@ export default {
   name: "AgentsView",
   data() {
     return {
-      tools: [],
+      skills: [],
       mine: [],
       publicAgents: [],
       detail: null,
@@ -210,7 +210,7 @@ export default {
         model: "",
         requestPublic: false,
         multiAgent: false,
-        tools: [],
+        skills: [],
         teamAgentIds: []
       },
       modelOptions: [],
@@ -228,7 +228,7 @@ export default {
         this.modelOptions = Array.isArray(models) ? models : [];
         const pricing = await apiRequest("/api/chat/models/pricing");
         this.modelRates = this.toRateMap(pricing);
-        this.tools = await apiRequest("/api/agents/tools");
+        this.skills = await apiRequest("/api/agents/skills");
         this.mine = (await apiRequest("/api/agents/mine?page=1&size=50")).content || [];
         this.publicAgents = (await apiRequest("/api/agents/public?page=1&size=50")).content || [];
       } catch (e) {
@@ -299,13 +299,13 @@ export default {
       const match = this.findAgentById(agentId);
       return match ? match.name : agentId;
     },
-    toolsForAgent(agentId) {
+    skillsForAgent(agentId) {
       const match = this.findAgentById(agentId);
-      const tools = (match && match.tools) ? match.tools : [];
-      if (Array.isArray(tools) && tools.length) {
-        return tools.join(", ");
+      const skills = (match && match.skills) ? match.skills : [];
+      if (Array.isArray(skills) && skills.length) {
+        return skills.join(", ");
       }
-      return "No tools";
+      return "No skills";
     },
     findAgentById(agentId) {
       return this.teamCandidates.find((a) => a.agentId === agentId)

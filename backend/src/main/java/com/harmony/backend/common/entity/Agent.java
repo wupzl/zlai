@@ -43,8 +43,8 @@ public class Agent {
     @TableField("user_id")
     private Long userId;
 
-    @TableField("tools")
-    private String tools;
+    @TableField("skills")
+    private String skills;
 
     @TableField("multi_agent")
     private Boolean multiAgent;

@@ -4,6 +4,8 @@ import com.harmony.backend.common.config.GlobalRateLimitProperties;
 import com.harmony.backend.common.model.GlobalRateLimitSettings;
 import com.harmony.backend.common.service.RedisTokenBucketService;
 import com.harmony.backend.common.service.GlobalRateLimitSettingsService;
+import com.harmony.backend.common.util.AuthCookieService;
+import com.harmony.backend.common.util.ClientIpResolver;
 import com.harmony.backend.common.util.JwtUtil;
 import com.harmony.backend.common.util.RequestUtils;
 import jakarta.servlet.FilterChain;
@@ -30,6 +32,8 @@ public class GlobalRateLimitFilter extends OncePerRequestFilter {
     private final GlobalRateLimitSettingsService settingsService;
     private final JwtUtil jwtUtil;
     private final RedisTokenBucketService tokenBucketService;
+    private final AuthCookieService authCookieService;
+    private final ClientIpResolver clientIpResolver;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -58,13 +62,16 @@ public class GlobalRateLimitFilter extends OncePerRequestFilter {
             return;
         }
         String token = RequestUtils.extractToken(request);
+        if (!StringUtils.hasText(token)) {
+            token = authCookieService.resolveAccessToken(request);
+        }
         Long currentUserId = resolveUserId(token);
         if (Boolean.TRUE.equals(settings.getAdminBypass()) && isAdminRequest(token)) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String ip = RequestUtils.getClientIp(request);
+        String ip = clientIpResolver.resolve(request);
         if (isWhitelistedIp(ip, settings)) {
             filterChain.doFilter(request, response);
             return;

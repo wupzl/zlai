@@ -1,5 +1,11 @@
 package com.harmony.backend.ai.agent.runtime;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.harmony.backend.ai.agent.planner.MultiAgentPlanner;
+import com.harmony.backend.ai.skill.AgentSkillRegistry;
+import com.harmony.backend.ai.skill.SkillExecutor;
+import com.harmony.backend.ai.skill.SkillPlanner;
+import com.harmony.backend.modules.chat.service.support.AgentMemoryService;
 import com.harmony.backend.modules.chat.adapter.LlmAdapter;
 import com.harmony.backend.modules.chat.adapter.LlmMessage;
 import org.junit.jupiter.api.Test;
@@ -7,18 +13,28 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.mock;
 
 class MultiAgentOrchestratorTest {
 
     @Test
-    void run_should_call_planner_specialist_critic_in_order() {
+    void run_should_delegate_to_adapter_chat() {
         MultiAgentOrchestrator orchestrator = new MultiAgentOrchestrator(
-                java.util.concurrent.Executors.newSingleThreadExecutor(), 5);
-        RecordingAdapter adapter = new RecordingAdapter()
-                .withResponses("PLAN: steps", "RESEARCH: facts", "CRITIQUE: issues", "FINAL: answer");
+                Executors.newSingleThreadExecutor(),
+                5,
+                mock(SkillExecutor.class),
+                mock(SkillPlanner.class),
+                mock(AgentSkillRegistry.class),
+                new ObjectMapper(),
+                mock(AgentMemoryService.class),
+                mock(MultiAgentPlanner.class));
+        RecordingAdapter adapter = new RecordingAdapter().withResponses("FINAL: answer");
 
         List<LlmMessage> context = List.of(
                 new LlmMessage("user", "Explain CAP theorem in 3 bullet points.")
@@ -27,49 +43,47 @@ class MultiAgentOrchestratorTest {
         String result = orchestrator.run(context, "deepseek-chat", adapter);
 
         assertEquals("FINAL: answer", result);
-        assertEquals(4, adapter.calls.size());
-
-        List<LlmMessage> call1 = adapter.calls.get(0);
-        List<LlmMessage> call2 = adapter.calls.get(1);
-        List<LlmMessage> call3 = adapter.calls.get(2);
-        List<LlmMessage> call4 = adapter.calls.get(3);
-
-        assertTrue(call1.get(0).getContent().contains("Planner Agent"));
-        assertTrue(call2.get(0).getContent().contains("Researcher Agent"));
-        assertTrue(call3.get(0).getContent().contains("Critic Agent"));
-
-        assertEquals("assistant", call4.get(call4.size() - 1).getRole());
-        assertTrue(call4.get(call4.size() - 1).getContent().contains("Plan:"));
+        assertEquals(1, adapter.calls.size());
+        assertEquals("user", adapter.calls.get(0).get(0).getRole());
     }
 
     @Test
-    void run_should_fallback_to_draft_when_critic_blank() {
+    void run_should_return_safe_trimmed_result() {
         MultiAgentOrchestrator orchestrator = new MultiAgentOrchestrator(
-                java.util.concurrent.Executors.newSingleThreadExecutor(), 5);
-        RecordingAdapter adapter = new RecordingAdapter()
-                .withResponses("PLAN: steps", "RESEARCH: facts", "   ", "   ");
+                Executors.newSingleThreadExecutor(),
+                5,
+                mock(SkillExecutor.class),
+                mock(SkillPlanner.class),
+                mock(AgentSkillRegistry.class),
+                new ObjectMapper(),
+                mock(AgentMemoryService.class),
+                mock(MultiAgentPlanner.class));
+        RecordingAdapter adapter = new RecordingAdapter().withResponses("   draft answer   ");
 
-        List<LlmMessage> context = List.of(
-                new LlmMessage("user", "Summarize the note.")
-        );
+        String result = orchestrator.run(List.of(new LlmMessage("user", "Summarize the note.")), "deepseek-chat", adapter);
 
-        String result = orchestrator.run(context, "deepseek-chat", adapter);
-
-        assertTrue(result.contains("PLAN") || result.contains("RESEARCH") || result.contains("steps"));
+        assertEquals("draft answer", result);
     }
 
     @Test
-    void stream_should_emit_chunks() {
+    void stream_should_emit_chunks_from_adapter() {
         MultiAgentOrchestrator orchestrator = new MultiAgentOrchestrator(
-                java.util.concurrent.Executors.newSingleThreadExecutor(), 5);
-        RecordingAdapter adapter = new RecordingAdapter()
-                .withResponses("PLAN", "RESEARCH", "CRITIQUE", "FINAL RESPONSE");
+                Executors.newSingleThreadExecutor(),
+                5,
+                mock(SkillExecutor.class),
+                mock(SkillPlanner.class),
+                mock(AgentSkillRegistry.class),
+                new ObjectMapper(),
+                mock(AgentMemoryService.class),
+                mock(MultiAgentPlanner.class));
+        RecordingAdapter adapter = new RecordingAdapter().withResponses("FINAL RESPONSE");
 
-        List<LlmMessage> context = List.of(
-                new LlmMessage("user", "Test streaming output.")
-        );
+        List<String> chunks = orchestrator.stream(
+                List.of(new LlmMessage("user", "Test streaming output.")),
+                "deepseek-chat",
+                adapter
+        ).collectList().block();
 
-        List<String> chunks = orchestrator.stream(context, "deepseek-chat", adapter).collectList().block();
         assertNotNull(chunks);
         assertFalse(chunks.isEmpty());
         assertEquals("FINAL RESPONSE", String.join("", chunks));
@@ -82,8 +96,8 @@ class MultiAgentOrchestratorTest {
 
         RecordingAdapter withResponses(String... values) {
             responses.clear();
-            for (String v : values) {
-                responses.add(v);
+            for (String value : values) {
+                responses.add(value);
             }
             return this;
         }
@@ -95,17 +109,15 @@ class MultiAgentOrchestratorTest {
 
         @Override
         public Flux<String> streamChat(List<LlmMessage> messages, String model) {
+            calls.add(new ArrayList<>(messages));
             return Flux.just(chat(messages, model));
         }
 
         @Override
         public String chat(List<LlmMessage> messages, String model) {
             calls.add(new ArrayList<>(messages));
-            int i = index.getAndIncrement();
-            if (i < responses.size()) {
-                return responses.get(i);
-            }
-            return "";
+            int current = index.getAndIncrement();
+            return current < responses.size() ? responses.get(current) : "";
         }
     }
 }

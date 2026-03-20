@@ -35,6 +35,11 @@ build/
 # Local env files (do not commit)
 .env
 .env.properties
+backend/.env
+backend/.env.properties
+frontend/.env
+frontend/.env.*
+!.env.example
 
 # Build outputs
 backend/target/
@@ -42,9 +47,11 @@ frontend/dist/
 frontend/node_modules/
 build/
 
+# Local tool state
+.codex/
+
 # Local artifacts
 .aiexclude
-docs/
 *.jar
 *.log
 *.tmp
@@ -54,7 +61,35 @@ docs/
 *.tar
 *.gz
 *.rar
+*.pid
+*.seed
+*.local
+*.orig
+*.rej
+*.out
+*.err
 
 # Test artifacts
 test/backend_app.jar
 test/jarcheck/
+test/*.log
+test/rag-eval/results/
+test/rag-eval/workspace-*/
+test/rag-eval/output-*/batches/
+
+# Backend local run/debug logs
+backend/*.log
+backend/*.err.log
+backend/*.start.log
+backend/*.start.err.log
+backend/*batch*.log
+backend/*fixedwait*.log
+
+# Frontend caches
+frontend/.vite/
+frontend/coverage/
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini

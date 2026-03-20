@@ -3,6 +3,7 @@ package com.harmony.backend.modules.chat.controller;
 import com.harmony.backend.common.domain.ApiResponse;
 import com.harmony.backend.common.exception.BusinessException;
 import com.harmony.backend.common.service.RedisTokenBucketService;
+import com.harmony.backend.common.util.ClientIpResolver;
 import com.harmony.backend.common.util.RequestUtils;
 import com.harmony.backend.modules.chat.controller.request.ChatRequest;
 import com.harmony.backend.modules.chat.controller.response.ChatSessionVO;
@@ -11,6 +12,7 @@ import com.harmony.backend.modules.chat.config.ChatRateLimitProperties;
 import com.harmony.backend.modules.chat.service.ChatService;
 import com.harmony.backend.modules.chat.service.ModelPricingService;
 import com.harmony.backend.modules.chat.service.SessionService;
+import com.harmony.backend.modules.chat.service.support.ChatSessionCacheService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -47,11 +49,12 @@ public class ChatController {
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
     private final RedisTokenBucketService tokenBucketService;
+    private final ChatSessionCacheService chatSessionCacheService;
+    private final ClientIpResolver clientIpResolver;
     @Value("${app.chat.stream-timeout-seconds:90}")
     private int streamTimeoutSeconds;
 
     private static final String RATE_LIMIT_KEY_PREFIX = "rate_limit:chat:";
-    private static final String SESSION_CACHE_KEY_PREFIX = "session:belong:";
     private static final String REQUEST_COUNT_KEY = "metrics:chat:request_count";
     @GetMapping("/{chatId}")
     @Timed(value = "chat.get_history", description = "Get chat history")
@@ -61,8 +64,7 @@ public class ChatController {
 
         Long userId = getCurrentUserId(request);
 
-        String cacheKey = SESSION_CACHE_KEY_PREFIX + userId + ":" + chatId;
-        Boolean cachedBelong = (Boolean) redisTemplate.opsForValue().get(cacheKey);
+        Boolean cachedBelong = chatSessionCacheService.getCachedBelong(userId, chatId);
 
         if (cachedBelong != null && !cachedBelong) {
             log.warn("Cache denied access: userId={}, chatId={}", userId, chatId);
@@ -71,9 +73,9 @@ public class ChatController {
 
         boolean belong = sessionService.checkChatBelong(userId, chatId);
         if (belong) {
-            redisTemplate.opsForValue().set(cacheKey, true, Duration.ofHours(2));
+            chatSessionCacheService.cacheBelong(userId, chatId, true);
         } else {
-            redisTemplate.opsForValue().set(cacheKey, false, Duration.ofMinutes(5));
+            chatSessionCacheService.cacheBelong(userId, chatId, false);
             return ApiResponse.error(401, "Unauthorized");
         }
 
@@ -114,11 +116,8 @@ public class ChatController {
 
         Long userId = getCurrentUserId(request);
         int effectiveSize = Math.min(Math.max(size, 1), 50);
-        String cacheKey = String.format("user:sessions:v4:%s:page:%s:size:%s",
-                userId, page, effectiveSize);
-
         com.harmony.backend.common.response.PageResult<ChatSessionVO> cached =
-                (com.harmony.backend.common.response.PageResult<ChatSessionVO>) redisTemplate.opsForValue().get(cacheKey);
+                chatSessionCacheService.getCachedSessions(userId, page, effectiveSize);
         if (cached != null && cached.getContent() != null) {
             log.debug("Session list cache hit: userId={}", userId);
             return ApiResponse.success(cached);
@@ -133,7 +132,7 @@ public class ChatController {
         result.setPageNumber(page);
         result.setPageSize(effectiveSize);
         result.setTotalPages((int) Math.ceil(total / (double) effectiveSize));
-        redisTemplate.opsForValue().set(cacheKey, result, Duration.ofMinutes(10));
+        chatSessionCacheService.cacheSessions(userId, page, effectiveSize, result);
 
         return ApiResponse.success(result);
     }
@@ -150,7 +149,7 @@ public class ChatController {
         Long userId = getCurrentUserId(request);
         ChatSessionVO session = sessionService.createSession(userId, title, model, toolModel);
 
-        clearUserSessionCache(userId);
+        invalidateUserSessionCache(userId);
 
         return ApiResponse.success(session);
     }
@@ -164,7 +163,7 @@ public class ChatController {
             return ApiResponse.error(401, "Unauthorized");
         }
         boolean ok = sessionService.renameSession(userId, chatId, title);
-        clearUserSessionCache(userId);
+        invalidateUserSessionCache(userId);
         return ok ? ApiResponse.success("success") : ApiResponse.error("Rename session failed");
     }
 
@@ -176,7 +175,7 @@ public class ChatController {
             return ApiResponse.error(401, "Unauthorized");
         }
         boolean ok = sessionService.deleteSession(userId, chatId);
-        clearUserSessionCache(userId);
+        invalidateUserSessionCache(userId);
         return ok ? ApiResponse.success("success") : ApiResponse.error("Delete session failed");
     }
 
@@ -240,8 +239,7 @@ public class ChatController {
                 chatIdMono = chatService.createNewSessionAndGetChatId(
                         userId, prompt, model, toolModel, gptId, agentId, useRag, ragQuery, ragTopK);
             } else {
-                String cacheKey = SESSION_CACHE_KEY_PREFIX + userId + ":" + chatId;
-                Boolean cachedBelong = (Boolean) redisTemplate.opsForValue().get(cacheKey);
+                Boolean cachedBelong = chatSessionCacheService.getCachedBelong(userId, chatId);
 
                 if (cachedBelong != null && !cachedBelong) {
                     return errorEventFlux("Unauthorized");
@@ -251,11 +249,11 @@ public class ChatController {
                         sessionService.checkChatBelong(userId, chatId);
 
                 if (!belong) {
-                    redisTemplate.opsForValue().set(cacheKey, false, Duration.ofMinutes(5));
+                    chatSessionCacheService.cacheBelong(userId, chatId, false);
                     return errorEventFlux("Unauthorized");
                 }
 
-                redisTemplate.opsForValue().set(cacheKey, true, Duration.ofHours(2));
+                chatSessionCacheService.cacheBelong(userId, chatId, true);
                 chatIdMono = Mono.just(chatId);
             }
             String finalModel = model;
@@ -263,7 +261,7 @@ public class ChatController {
             return chatIdMono.flatMapMany(finalChatId -> {
                         Flux<ServerSentEvent<String>> initSSE = Flux.empty();
                         if (isNewSession) {
-                            clearUserSessionCache(userId);
+                            invalidateUserSessionCache(userId);
                             initSSE = Flux.just(ServerSentEvent.<String>builder()
                                     .event("session_created")
                                     .data(toJson(Map.of("chatId", finalChatId)))
@@ -321,7 +319,7 @@ public class ChatController {
                         return initSSE
                                 .concatWith(chatStream)
                                 .concatWithValues(doneEvent)
-                                .doFinally(signal -> clearUserSessionCache(userId));
+                                .doFinally(signal -> invalidateUserSessionCache(userId));
                     })
                     .onErrorResume(error -> errorEventFlux(resolveStreamError(error)));
         });
@@ -360,8 +358,7 @@ public class ChatController {
         }
 
         if (chatId != null && !chatId.isEmpty()) {
-            String cacheKey = SESSION_CACHE_KEY_PREFIX + userId + ":" + chatId;
-            Boolean cachedBelong = (Boolean) redisTemplate.opsForValue().get(cacheKey);
+            Boolean cachedBelong = chatSessionCacheService.getCachedBelong(userId, chatId);
 
             if (cachedBelong != null && !cachedBelong) {
                 return ApiResponse.error(401, "Unauthorized");
@@ -371,11 +368,11 @@ public class ChatController {
                     sessionService.checkChatBelong(userId, chatId);
 
             if (!belong) {
-                redisTemplate.opsForValue().set(cacheKey, false, Duration.ofMinutes(5));
+                chatSessionCacheService.cacheBelong(userId, chatId, false);
                 return ApiResponse.error(401, "Unauthorized");
             }
 
-            redisTemplate.opsForValue().set(cacheKey, true, Duration.ofHours(2));
+            chatSessionCacheService.cacheBelong(userId, chatId, true);
         }
 
         long startTime = System.currentTimeMillis();
@@ -387,7 +384,7 @@ public class ChatController {
 
             log.info("Sync chat completed: userId={}, duration={}ms", userId, duration);
             recordMetrics(userId, chatId, duration, true);
-            clearUserSessionCache(userId);
+            invalidateUserSessionCache(userId);
 
             return ApiResponse.success(response);
         } catch (UnsupportedOperationException e) {
@@ -410,7 +407,7 @@ public class ChatController {
 
     private void checkRateLimit(String action, HttpServletRequest request) {
         Long userId = getCurrentUserId(request);
-        String ip = getClientIp(request);
+        String ip = clientIpResolver.resolve(request);
 
         String userKey = RATE_LIMIT_KEY_PREFIX + "user:" + userId + ":" + action;
         String ipKey = RATE_LIMIT_KEY_PREFIX + "ip:" + ip + ":" + action;
@@ -426,27 +423,12 @@ public class ChatController {
         }
     }
 
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        return ip != null ? ip.split(",")[0] : "unknown";
-    }
-
-    private void clearUserSessionCache(Long userId) {
-        String pattern = "user:sessions:*:" + userId + ":*";
+    private void invalidateUserSessionCache(Long userId) {
         try {
-            redisTemplate.delete(redisTemplate.keys(pattern));
-            log.debug("Clear session cache: userId={}", userId);
+            chatSessionCacheService.invalidateUserSessions(userId);
+            log.debug("Invalidate session cache: userId={}", userId);
         } catch (Exception e) {
-            log.warn("Clear session cache failed: userId={}, error={}", userId, e.getMessage());
+            log.warn("Invalidate session cache failed: userId={}, error={}", userId, e.getMessage());
         }
     }
 

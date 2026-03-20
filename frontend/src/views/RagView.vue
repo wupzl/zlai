@@ -57,7 +57,7 @@
           <div class="session-meta" v-if="mdFile">
             Matched images to upload: <strong>{{ imageFiles.length }}</strong> (limit 200)
           </div>
-          <button class="cta" @click="uploadMarkdown">Upload</button>
+          <button class="cta" @click="uploadMarkdown" :disabled="!!activeTaskId">Upload</button>
         </div>
 
         <div class="card rag-card">
@@ -67,7 +67,7 @@
           <div class="session-meta" v-if="docFile">
             Selected: {{ docFile.name }}
           </div>
-          <button class="cta" @click="uploadDocFile">Upload</button>
+          <button class="cta" @click="uploadDocFile" :disabled="!!activeTaskId">Upload</button>
         </div>
       </div>
 
@@ -105,7 +105,7 @@
 </template>
 
 <script>
-import { apiRequest, API_BASE } from "../api";
+import { apiRequest, authFetch } from "../api";
 import JSZip from "jszip";
 
 export default {
@@ -126,6 +126,8 @@ export default {
       query: { text: "", topK: 5 },
       queryResult: "",
       status: "",
+      activeTaskId: "",
+      taskPollTimer: null,
       mdFile: null,
       imageFiles: [],
       docFile: null,
@@ -136,6 +138,9 @@ export default {
   mounted() {
     this.loadOptions();
     this.loadDocs(true);
+  },
+  beforeUnmount() {
+    this.clearTaskPoll();
   },
   methods: {
     async loadOptions() {
@@ -340,6 +345,7 @@ export default {
         return;
       }
       try {
+        this.clearTaskPoll();
         const form = new FormData();
         form.append("file", this.mdFile);
         if (this.imageFiles.length > 0) {
@@ -353,20 +359,23 @@ export default {
           const blob = await zip.generateAsync({ type: "blob" });
           form.append("imagesZip", blob, "images.zip");
         }
-        const token = localStorage.getItem("accessToken") || "";
-        const res = await fetch(`${API_BASE}/api/rag/ingest/markdown-upload`, {
+        const res = await authFetch("/api/rag/ingest/markdown-upload/async", {
           method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
           body: form
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || (data && data.code && data.code !== 200)) {
           throw new Error(data?.message || "Upload failed");
         }
-        this.status = "Imported";
-        this.mdFile = null;
-        this.imageFiles = [];
-        this.loadDocs();
+        this.status = "Queued markdown upload...";
+        this.trackIngestTask(data?.data, {
+          onCompleted: () => {
+            this.mdFile = null;
+            this.imageFiles = [];
+            this.requiredImageNames = new Set();
+            this.requiredImagePaths = new Set();
+          }
+        });
       } catch (e) {
         this.status = e.message;
       }
@@ -378,24 +387,70 @@ export default {
         return;
       }
       try {
+        this.clearTaskPoll();
         const form = new FormData();
         form.append("file", this.docFile);
-        const token = localStorage.getItem("accessToken") || "";
-        const res = await fetch(`${API_BASE}/api/rag/ingest/file-upload`, {
+        const res = await authFetch("/api/rag/ingest/file-upload/async", {
           method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
           body: form
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || (data && data.code && data.code !== 200)) {
           throw new Error(data?.message || "Upload failed");
         }
-        this.status = "Imported";
-        this.docFile = null;
-        this.loadDocs();
+        this.status = "Queued file upload...";
+        this.trackIngestTask(data?.data, {
+          onCompleted: () => {
+            this.docFile = null;
+          }
+        });
       } catch (e) {
         this.status = e.message;
       }
+    },
+    clearTaskPoll() {
+      if (this.taskPollTimer) {
+        clearTimeout(this.taskPollTimer);
+        this.taskPollTimer = null;
+      }
+      this.activeTaskId = "";
+    },
+    async trackIngestTask(task, options = {}) {
+      const taskId = task?.taskId;
+      if (!taskId) {
+        this.status = "Upload task started, but task id is missing.";
+        return;
+      }
+      this.activeTaskId = taskId;
+      this.applyTaskStatus(task);
+      const poll = async () => {
+        try {
+          const latest = await apiRequest(`/api/rag/ingest/tasks/${taskId}`);
+          this.applyTaskStatus(latest);
+          const status = latest?.status || "";
+          if (status === "completed") {
+            this.clearTaskPoll();
+            options.onCompleted?.(latest);
+            this.loadDocs(true);
+            return;
+          }
+          if (status === "failed") {
+            this.clearTaskPoll();
+            return;
+          }
+          this.taskPollTimer = setTimeout(poll, 1200);
+        } catch (e) {
+          this.status = e.message || "Failed to fetch upload task status.";
+          this.clearTaskPoll();
+        }
+      };
+      this.taskPollTimer = setTimeout(poll, 800);
+    },
+    applyTaskStatus(task) {
+      if (!task) return;
+      const progress = typeof task.progress === "number" ? `${task.progress}%` : "";
+      const message = task.message || task.status || "Running";
+      this.status = progress ? `${message} (${progress})` : message;
     },
     toRateMap(pricing) {
       if (!Array.isArray(pricing)) return {};

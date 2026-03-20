@@ -117,7 +117,7 @@
 </template>
 
 <script>
-import { apiRequest, clearAuthState } from "../api";
+import { apiRequest, logout as logoutRequest } from "../api";
 
 export default {
   name: "UserLayout",
@@ -321,8 +321,8 @@ export default {
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed;
     },
-    logout() {
-      clearAuthState();
+    async logout() {
+      await logoutRequest();
       this.$router.push("/auth/user");
     }
   }

@@ -31,17 +31,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<?>> handleRuntime(RuntimeException ex) {
-        String message = ex.getMessage() == null ? "Request failed" : ex.getMessage();
-        int code = HttpStatus.BAD_REQUEST.value();
-        if (message.toLowerCase().contains("unauthorized")
-                || message.toLowerCase().contains("invalid username or password")
-                || message.toLowerCase().contains("account is locked")
-                || message.toLowerCase().contains("account is disabled")) {
-            code = HttpStatus.UNAUTHORIZED.value();
-        }
-        log.warn("Runtime exception: {}", message);
-        return ResponseEntity.status(code)
-                .body(ApiResponse.error(code, message));
+        log.error("Unexpected runtime exception", ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error("Internal server error"));
     }
 
     @ExceptionHandler(ResponseStatusException.class)

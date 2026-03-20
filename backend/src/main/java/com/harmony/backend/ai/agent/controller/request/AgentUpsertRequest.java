@@ -11,7 +11,7 @@ public class AgentUpsertRequest {
     private String instructions;
     private String model;
     private String toolModel;
-    private List<String> tools;
+    private List<String> skills;
     private Boolean requestPublic;
     private Boolean multiAgent;
     private List<String> teamAgentIds;

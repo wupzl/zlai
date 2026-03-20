@@ -23,9 +23,8 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
-public class OpenAiAdapter implements LlmAdapter {
+public class OpenAiAdapter extends AbstractOpenAiCompatibleAdapter {
 
     @Value("${app.ai.openai.key:}")
     private String openAiKey;
@@ -42,11 +41,18 @@ public class OpenAiAdapter implements LlmAdapter {
     @Value("${app.ai.openai.stream-enabled:true}")
     private boolean streamEnabled;
 
-    private final WebClient.Builder webClientBuilder;
-    private final ObjectMapper objectMapper;
     private final AppConfigService appConfigService;
     private final SystemLogMapper systemLogMapper;
     private final AtomicInteger streamLogCounter = new AtomicInteger(0);
+
+    public OpenAiAdapter(WebClient.Builder webClientBuilder,
+                         ObjectMapper objectMapper,
+                         AppConfigService appConfigService,
+                         SystemLogMapper systemLogMapper) {
+        super(webClientBuilder, objectMapper);
+        this.appConfigService = appConfigService;
+        this.systemLogMapper = systemLogMapper;
+    }
 
     @Override
     public boolean supports(String model) {
@@ -120,25 +126,23 @@ public class OpenAiAdapter implements LlmAdapter {
     }
 
     @Override
-    public String chat(List<LlmMessage> messages, String model) {
-        WebClient webClient = webClientBuilder.baseUrl(resolveBaseUrl()).build();
-        Map<String, Object> payload = buildPayload(messages, model, false);
+    protected String getApiKey() {
+        return resolveApiKey();
+    }
 
-        String response = webClient.post()
-                .uri(resolveChatPath())
-                .contentType(MediaType.APPLICATION_JSON)
-                .accept(MediaType.APPLICATION_JSON)
-                .header("Authorization", "Bearer " + resolveApiKey())
-                .bodyValue(payload)
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
+    @Override
+    protected String getBaseUrl() {
+        return resolveBaseUrl();
+    }
 
-        if (response == null || response.isBlank()) {
-            return "";
-        }
+    @Override
+    protected String getChatPath() {
+        return resolveChatPath();
+    }
 
-        return extractSyncContent(response);
+    @Override
+    protected String getProviderName() {
+        return "OpenAI";
     }
 
     private String resolveChatPath() {
@@ -198,20 +202,8 @@ public class OpenAiAdapter implements LlmAdapter {
         }
     }
 
-    private Map<String, Object> buildPayload(List<LlmMessage> messages, String model, boolean stream) {
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("model", model);
-        payload.put("stream", stream);
-        payload.put("messages", messages.stream()
-                .map(message -> Map.of(
-                        "role", message.getRole(),
-                        "content", message.getContent()
-                ))
-                .toList());
-        return payload;
-    }
-
-    private Flux<String> extractStreamContent(String chunk) {
+    @Override
+    protected Flux<String> extractStreamContent(String chunk) {
         if (chunk == null || chunk.isBlank()) {
             return Flux.empty();
         }
@@ -257,7 +249,8 @@ public class OpenAiAdapter implements LlmAdapter {
                 .filter(content -> content != null && !content.isEmpty());
     }
 
-    private String extractSyncContent(String response) {
+    @Override
+    protected String extractSyncContent(String response) {
         try {
             JsonNode root = objectMapper.readTree(response);
             JsonNode contentNode = root.path("choices").path(0).path("message").path("content");

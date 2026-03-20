@@ -1,0 +1,21 @@
+app:
+  auth:
+    cookies:
+      secure: false
+      same-site: Lax
+  llm:
+    mock-enabled: false
+  tools:
+    search:
+      bocha-enabled: false
+      baidu-enabled: false
+  rag:
+    ocr:
+      enabled: false
+  jwt:
+    access-secret: test-access-secret
+    refresh-secret: test-refresh-secret
+
+spring:
+  main:
+    lazy-initialization: true

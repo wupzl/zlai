@@ -5,6 +5,13 @@ DELETE FROM `message` WHERE `chat_id` = 'chat-demo-001';
 DELETE FROM `chat_session` WHERE `chat_id` = 'chat-demo-001';
 DELETE FROM `gpt` WHERE `gpt_id` = 'gpt-demo-001';
 DELETE FROM `agent` WHERE `agent_id` = 'agent-demo-001';
+DELETE FROM `agent_skill` WHERE `skill_key` IN (
+  'web_research',
+  'time_lookup',
+  'calculation',
+  'translation',
+  'summarization'
+);
 DELETE FROM `system_log` WHERE `operation` = 'SEED_DATA';
 DELETE FROM `app_config` WHERE `config_key` IN (
   'tools.search.searx.enabled',
@@ -76,9 +83,27 @@ FROM `account` a
 WHERE a.`username` = 'test01'
 LIMIT 1;
 
+/* Default skill catalog */
+INSERT INTO `agent_skill` (`skill_key`, `name`, `description`, `tool_keys`, `execution_mode`, `input_schema`, `step_config`, `enabled`, `is_deleted`)
+VALUES
+('web_research', 'Web Research', 'Search the web and summarize relevant findings.', '["web_search"]', 'single_tool', '[{"key":"query","type":"string","required":true,"description":"Search query"}]', '[{"toolKey":"web_search","prompt":"Search the web for relevant sources and summarize the findings."}]', 1, 0),
+('time_lookup', 'Time Lookup', 'Look up the current time for a timezone or region.', '["datetime"]', 'single_tool', '[{"key":"timezone","type":"string","required":false,"description":"Timezone or region name"}]', '[{"toolKey":"datetime","prompt":"Return the current time for the requested timezone or region."}]', 1, 0),
+('calculation', 'Calculation', 'Solve arithmetic and numeric expressions.', '["calculator"]', 'single_tool', '[{"key":"expression","type":"string","required":true,"description":"Math expression to solve"}]', '[{"toolKey":"calculator","prompt":"Evaluate the numeric expression accurately."}]', 1, 0),
+('translation', 'Translation', 'Translate text between languages.', '["translation"]', 'single_tool', '[{"key":"text","type":"string","required":true,"description":"Source text"},{"key":"targetLanguage","type":"string","required":true,"description":"Target language"}]', '[{"toolKey":"translation","prompt":"Translate the source text into the target language."}]', 1, 0),
+('summarization', 'Summarization', 'Summarize long text into a concise answer.', '["summarize"]', 'single_tool', '[{"key":"text","type":"string","required":true,"description":"Text to summarize"}]', '[{"toolKey":"summarize","prompt":"Summarize the provided text concisely."}]', 1, 0)
+ON DUPLICATE KEY UPDATE
+`name` = VALUES(`name`),
+`description` = VALUES(`description`),
+`tool_keys` = VALUES(`tool_keys`),
+`execution_mode` = VALUES(`execution_mode`),
+`input_schema` = VALUES(`input_schema`),
+`step_config` = VALUES(`step_config`),
+`enabled` = VALUES(`enabled`),
+`is_deleted` = VALUES(`is_deleted`);
+
 /* Demo multi-agent */
 INSERT INTO `agent`
-(`agent_id`, `name`, `description`, `instructions`, `model`, `user_id`, `tools`, `multi_agent`, `is_public`, `is_deleted`)
+(`agent_id`, `name`, `description`, `instructions`, `model`, `user_id`, `skills`, `multi_agent`, `is_public`, `is_deleted`)
 SELECT
     'agent-demo-001',
     'Multi Agent Tutor',
@@ -86,7 +111,7 @@ SELECT
     'Teach with clear steps and concise explanations.',
     'deepseek-chat',
     a.`id`,
-    '["calculator","datetime","translate"]',
+    '["calculation","time_lookup","translation"]',
     1,
     1,
     0

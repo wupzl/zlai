@@ -225,7 +225,27 @@ CREATE TABLE IF NOT EXISTS `app_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='App config';
 
 /* =========================================================
-   8) Agent
+   12) Agent skill catalog
+   ========================================================= */
+CREATE TABLE IF NOT EXISTS `agent_skill` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
+    `skill_key` VARCHAR(64) NOT NULL UNIQUE COMMENT 'Skill key',
+    `name` VARCHAR(128) NOT NULL COMMENT 'Skill name',
+    `description` TEXT COMMENT 'Skill description',
+    `tool_keys` TEXT COMMENT 'Bound tool keys JSON array',
+    `execution_mode` VARCHAR(32) NOT NULL DEFAULT 'single_tool' COMMENT 'Execution mode: single_tool/pipeline',
+    `input_schema` LONGTEXT COMMENT 'Input schema JSON array',
+    `step_config` LONGTEXT COMMENT 'Step config JSON array',
+    `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Enabled flag',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at',
+    `is_deleted` TINYINT(1) DEFAULT 0 COMMENT 'Soft delete',
+    PRIMARY KEY (`id`),
+    INDEX `idx_skill_enabled` (`enabled`, `updated_at` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent skill catalog';
+
+/* =========================================================
+   13) Agent
    ========================================================= */
 CREATE TABLE IF NOT EXISTS `agent` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
@@ -236,7 +256,7 @@ CREATE TABLE IF NOT EXISTS `agent` (
     `model` VARCHAR(64) NOT NULL DEFAULT 'deepseek-chat' COMMENT 'Model',
     `tool_model` VARCHAR(64) DEFAULT NULL COMMENT 'Tool model',
     `user_id` BIGINT NOT NULL COMMENT 'Owner user ID',
-    `tools` TEXT COMMENT 'Tools JSON array',
+    `skills` TEXT COMMENT 'Skills JSON array',
     `multi_agent` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Enable multi-agent orchestration',
     `team_agent_ids` TEXT COMMENT 'Team agent ids JSON array',
     `team_config` TEXT COMMENT 'Team config JSON array',

@@ -59,7 +59,7 @@
             <input v-model="edit.model" placeholder="Model" />
           </div>
           <div class="hint">Billing rate: {{ rateSummary }}</div>
-          <div class="hint">Tool usage is billed separately. Tool Model is selected in chat session settings.</div>
+          <div class="hint">Skills are task-oriented abilities built on approved backend tools.</div>
           <div class="field-group">
             <div class="field-label">Description</div>
             <textarea v-model="edit.description" rows="3" placeholder="What this agent does and how it should behave"></textarea>
@@ -70,8 +70,8 @@
             <div class="hint">You can split multiple system prompts with a line containing only <b>---</b>. They will be concatenated with separators.</div>
           </div>
           <div class="tool-list">
-            <label v-for="t in tools" :key="t.key">
-              <input type="checkbox" :value="t.key" v-model="edit.tools" />
+            <label v-for="t in skills" :key="t.key">
+              <input type="checkbox" :value="t.key" v-model="edit.skills" />
               {{ t.name }}
             </label>
           </div>
@@ -120,7 +120,7 @@ export default {
       status: "",
       selected: null,
       edit: {},
-      tools: [],
+      skills: [],
       modelRates: {},
       keyword: "",
       requestedOnly: false,
@@ -132,13 +132,13 @@ export default {
   },
   mounted() {
     this.loadAgents();
-    this.loadTools();
+    this.loadSkills();
     this.loadPricing();
   },
   methods: {
-    async loadTools() {
+    async loadSkills() {
       try {
-        this.tools = await apiRequest("/api/agents/tools");
+        this.skills = await apiRequest("/api/agents/skills");
       } catch (e) {
         this.status = e.message;
       }
@@ -185,7 +185,7 @@ export default {
           model: a.model || "",
           description: a.description || "",
           instructions: a.instructions || "",
-          tools: (a.tools || []).slice ? (a.tools || []) : (a.tools ? String(a.tools).split(",") : []),
+          skills: (a.skills || []).slice ? (a.skills || []) : (a.skills ? String(a.skills).split(",") : []),
           teamAgentIds: (a.teamAgentIds || []).join ? (a.teamAgentIds || []).join(",") : (a.teamAgentIds || ""),
           requestPublic: !!a.requestPublic
         };
@@ -205,7 +205,7 @@ export default {
           model: this.edit.model,
           description: this.edit.description,
           instructions: this.normalizeInstructions(this.edit.instructions || ""),
-          tools: this.edit.tools || [],
+          skills: this.edit.skills || [],
           teamAgentIds,
           requestPublic: !!this.edit.requestPublic
         };

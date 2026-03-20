@@ -8,6 +8,5 @@ import java.util.List;
 public class TeamAgentConfig {
     private String agentId;
     private String role;
-    private List<String> tools;
+    private List<String> skills;
 }
-

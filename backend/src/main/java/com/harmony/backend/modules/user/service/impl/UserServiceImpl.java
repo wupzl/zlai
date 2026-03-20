@@ -11,8 +11,10 @@ import com.harmony.backend.common.event.UserLoginEvent;
 import com.harmony.backend.common.entity.LoginLog;
 import com.harmony.backend.common.mapper.LoginLogMapper;
 import com.harmony.backend.common.mapper.UserMapper;
+import com.harmony.backend.common.util.ClientIpResolver;
 import com.harmony.backend.common.util.JwtUtil;
 import com.harmony.backend.common.util.RequestUtils;
+import com.harmony.backend.common.util.AuthCookieService;
 import com.harmony.backend.common.validator.PasswordValidator;
 import com.harmony.backend.modules.user.controller.request.ChangePasswordRequest;
 import com.harmony.backend.modules.user.controller.request.LoginRequest;
@@ -24,6 +26,7 @@ import com.harmony.backend.modules.user.controller.response.UserInfoVO;
 import com.harmony.backend.modules.user.service.IUserService;
 import com.harmony.backend.modules.user.service.UserSecurityService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -53,6 +56,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     private final RedisTemplate<String, String> redisTemplate;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final ClientIpResolver clientIpResolver;
+    private final AuthCookieService authCookieService;
     private final PasswordValidator passwordValidator;
     private final UserSecurityService userSecurityService;
     private final ApplicationEventPublisher eventPublisher;
@@ -106,7 +111,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                         .eq(User::getDeleted, false)
         );
         if (existingByUsername != null) {
-            throw new RuntimeException("Username already exists");
+            throw new BusinessException(409, "Username already exists");
         }
 
         User user = User.builder()
@@ -128,12 +133,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public LoginResponse login(LoginRequest loginRequest, HttpServletRequest request) {
+    public LoginResponse login(LoginRequest loginRequest, HttpServletRequest request, HttpServletResponse response) {
         String username = loginRequest.getUsername();
         String password = loginRequest.getPassword();
         String deviceId = StringUtils.hasText(loginRequest.getDeviceId()) ?
                 loginRequest.getDeviceId() : UUID.randomUUID().toString();
-        String ip = RequestUtils.getClientIp(request);
+        String ip = clientIpResolver.resolve(request);
         String userAgent = request.getHeader("User-Agent");
         LocalDateTime now = LocalDateTime.now();
 
@@ -141,24 +146,24 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
         if (user == null) {
             handleLoginFailure(username, ip, userAgent, "User not found");
-            throw new RuntimeException("Invalid username or password");
+            throw new BusinessException(401, "Invalid username or password");
         }
 
         if ("LOCKED".equals(user.getStatus())) {
-            throw new RuntimeException("Account is locked");
+            throw new BusinessException(423, "Account is locked");
         }
 
         if (!user.isNormal()) {
             if (user.isDisabled()) {
-                throw new RuntimeException("Account is disabled");
+                throw new BusinessException(403, "Account is disabled");
             } else if (user.isLocked()) {
-                throw new RuntimeException("Account is locked");
+                throw new BusinessException(423, "Account is locked");
             }
         }
 
         if (!passwordEncoder.matches(password, user.getPassword())) {
             handleLoginFailure(username, ip, userAgent, "Wrong password");
-            throw new RuntimeException("Invalid username or password");
+            throw new BusinessException(401, "Invalid username or password");
         }
 
         String accessToken = jwtUtil.generateAccessToken(
@@ -168,6 +173,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                 user.getRole()
         );
         String refreshToken = jwtUtil.generateRefreshToken(user.getId(), deviceId);
+        authCookieService.writeAccessToken(response, accessToken, jwtUtil.getTokenRemainingTime(accessToken, false));
+        authCookieService.writeRefreshToken(response, refreshToken, jwtUtil.getTokenRemainingTime(refreshToken, true));
 
         DecodedJWT decodedAccess = jwtUtil.verifyAccessToken(accessToken);
         if (decodedAccess != null) {
@@ -184,34 +191,34 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         eventPublisher.publishEvent(new UserLoginEvent(this, user.getId()));
 
         return LoginResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken)
                 .expiresIn(jwtUtil.getTokenRemainingTime(accessToken, false))
+                .tokenType("Cookie")
+                .loginTime(now)
                 .userInfo(convertToUserVO(user))
                 .build();
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public TokenResponse refreshToken(String refreshToken, HttpServletRequest request) {
+    public TokenResponse refreshToken(String refreshToken, HttpServletRequest request, HttpServletResponse response) {
         log.info("Refresh token request");
 
         String blacklistKey = REFRESH_TOKEN_BLACKLIST_PREFIX + refreshToken;
         if (Boolean.TRUE.equals(redisTemplate.hasKey(blacklistKey))) {
             log.warn("Refresh token is blacklisted");
-            throw new RuntimeException("Refresh token invalid");
+            throw new BusinessException(401, "Refresh token invalid");
         }
 
         Long userId = jwtUtil.getInternalUserIdFromToken(refreshToken, true);
         if (userId == null) {
             log.warn("Refresh token invalid or expired");
-            throw new RuntimeException("Refresh token invalid or expired");
+            throw new BusinessException(401, "Refresh token invalid or expired");
         }
 
         User user = userMapper.selectById(userId);
         if (user == null || Boolean.TRUE.equals(user.getDeleted()) || !user.isNormal()) {
             log.warn("User not found or status invalid: userId={}", userId);
-            throw new RuntimeException("User not found or status invalid");
+            throw new BusinessException(401, "User not found or status invalid");
         }
 
         String newAccessToken = jwtUtil.generateAccessToken(
@@ -225,11 +232,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         if (decodedAccess != null) {
             userSecurityService.recordTokenIssuedTime(user.getId(), decodedAccess.getIssuedAt());
         }
+        authCookieService.writeAccessToken(response, newAccessToken, jwtUtil.getTokenRemainingTime(newAccessToken, false));
 
         log.info("Token refreshed: userId={}, username={}",
                 user.getId(), user.getUsername());
 
-        return new TokenResponse(newAccessToken);
+        return new TokenResponse(null);
     }
 
     private UserInfoVO convertToUserVO(User user) {
@@ -290,15 +298,29 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
      */
     @Override
     @Transactional
-    public boolean logout(String refreshToken) {
-        Long remainingTime = jwtUtil.getTokenRemainingTime(refreshToken, true);
-        if (remainingTime > 0) {
-            String blacklistKey = REFRESH_TOKEN_BLACKLIST_PREFIX + refreshToken;
-            redisTemplate.opsForValue().set(blacklistKey, "1", remainingTime, TimeUnit.SECONDS);
-            log.info("Logout success, refresh token blacklisted, remainingTime={}s", remainingTime);
-            return true;
+    public boolean logout(String refreshToken, String accessToken) {
+        boolean invalidated = false;
+        if (StringUtils.hasText(refreshToken)) {
+            Long remainingTime = jwtUtil.getTokenRemainingTime(refreshToken, true);
+            if (remainingTime > 0) {
+                String blacklistKey = REFRESH_TOKEN_BLACKLIST_PREFIX + refreshToken;
+                redisTemplate.opsForValue().set(blacklistKey, "1", remainingTime, TimeUnit.SECONDS);
+                invalidated = true;
+            }
         }
-        return false;
+        Long userId = jwtUtil.getInternalUserIdFromToken(accessToken, false);
+        if (userId == null) {
+            userId = jwtUtil.getInternalUserIdFromToken(refreshToken, true);
+        }
+        if (userId != null) {
+            updateLastLogoutTime(userId, LocalDateTime.now());
+            userSecurityService.recordTokenIssuedTime(userId, new Date());
+            invalidated = true;
+        }
+        if (invalidated) {
+            log.info("Logout success: userId={}", userId);
+        }
+        return invalidated;
     }
 
     @Override

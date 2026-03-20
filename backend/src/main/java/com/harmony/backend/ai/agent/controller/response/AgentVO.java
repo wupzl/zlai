@@ -14,7 +14,7 @@ public class AgentVO {
     private String model;
     private String toolModel;
     private Long userId;
-    private List<String> tools;
+    private List<String> skills;
     private Boolean multiAgent;
     private List<String> teamAgentIds;
     private List<com.harmony.backend.ai.agent.model.TeamAgentConfig> teamConfigs;

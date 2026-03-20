@@ -2,15 +2,15 @@ package com.harmony.backend;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
-@SpringBootTest(properties = {
-        "app.jwt.access-secret=test-access-secret",
-        "app.jwt.refresh-secret=test-refresh-secret"
-})
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.NONE
+)
+@ActiveProfiles("test")
 class BackendApplicationTests {
 
     @Test
     void contextLoads() {
     }
-
 }

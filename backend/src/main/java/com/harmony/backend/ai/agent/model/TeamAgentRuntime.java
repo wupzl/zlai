@@ -10,5 +10,5 @@ public class TeamAgentRuntime {
     private Agent agent;
     private String role;
     private List<String> tools;
+    private List<String> skills;
 }
-

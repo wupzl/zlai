@@ -47,7 +47,6 @@ public class SecurityConfig {
                                 "/api/user/login",
                                 "/api/user/refresh",
                                 "/api/user/logout",
-                                "/api/user/check",
                                 "/api/gpts/public/**",
                                 "/api/test/**",
                                 "/error",

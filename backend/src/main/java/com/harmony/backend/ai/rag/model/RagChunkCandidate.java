@@ -13,4 +13,5 @@ public class RagChunkCandidate {
     private String content;
     private float[] embedding;
     private double distance;
+    private String chunkMetadata;
 }

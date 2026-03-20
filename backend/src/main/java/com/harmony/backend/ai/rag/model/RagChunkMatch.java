@@ -11,4 +11,5 @@ public class RagChunkMatch {
     private String docId;
     private String content;
     private double score;
+    private String chunkMetadata;
 }

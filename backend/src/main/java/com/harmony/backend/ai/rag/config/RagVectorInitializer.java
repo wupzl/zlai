@@ -22,5 +22,19 @@ public class RagVectorInitializer {
             PGvector.registerTypes(connection);
         } catch (Exception ignored) {
         }
+        try {
+            ragJdbcTemplate.execute("ALTER TABLE rag_document ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)");
+        } catch (Exception ignored) {
+        }
+        try {
+            ragJdbcTemplate.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_rag_document_user_content_hash " +
+                            "ON rag_document(user_id, content_hash) WHERE is_deleted = false");
+        } catch (Exception ignored) {
+        }
+        try {
+            ragJdbcTemplate.execute("ALTER TABLE rag_chunk ADD COLUMN IF NOT EXISTS chunk_metadata TEXT");
+        } catch (Exception ignored) {
+        }
     }
 }
