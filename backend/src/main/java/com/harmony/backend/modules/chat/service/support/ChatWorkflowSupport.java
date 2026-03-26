@@ -11,12 +11,14 @@ import com.harmony.backend.modules.chat.service.orchestration.model.UserMessageR
 import com.harmony.backend.modules.chat.support.ChatBloomFilterService;
 import com.harmony.backend.modules.chat.support.MessageStatus;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class ChatWorkflowSupport {
 
@@ -89,20 +91,11 @@ public class ChatWorkflowSupport {
     }
 
     public void updateSessionStats(String chatId, int messageDelta, String currentMessageId) {
-        Session session = sessionMapper.selectOne(new LambdaQueryWrapper<Session>()
-                .eq(Session::getChatId, chatId)
-                .eq(Session::getIsDeleted, false));
-        if (session == null) {
+        int updated = sessionMapper.incrementMessageCount(chatId, messageDelta, currentMessageId, LocalDateTime.now());
+        if (updated <= 0) {
+            log.warn("Skip session stats update because session was not found or deleted: chatId={}", chatId);
             return;
         }
-
-        int currentCount = session.getMessageCount() == null ? 0 : session.getMessageCount();
-        session.setMessageCount(currentCount + messageDelta);
-        session.setLastActiveTime(LocalDateTime.now());
-        if (currentMessageId != null) {
-            session.setCurrentMessageId(currentMessageId);
-        }
-        sessionMapper.updateById(session);
     }
 
     public void createAssistantPlaceholder(String chatId, String parentMessageId, String assistantMessageId, String model) {

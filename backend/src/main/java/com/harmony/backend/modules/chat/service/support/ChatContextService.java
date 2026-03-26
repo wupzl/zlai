@@ -1,6 +1,6 @@
 package com.harmony.backend.modules.chat.service.support;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.harmony.backend.ai.rag.model.RagEvidenceResult;
 import com.harmony.backend.ai.rag.service.RagService;
 import com.harmony.backend.common.entity.Message;
 import com.harmony.backend.common.entity.Session;
@@ -11,8 +11,10 @@ import com.harmony.backend.modules.chat.service.support.model.ResolvedRagEvidenc
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -30,6 +32,9 @@ public class ChatContextService {
 
     @Value("${app.chat.context.window-messages:20}")
     private int contextWindowMessages;
+
+    @Value("${app.chat.context.prefetch-messages:64}")
+    private int contextPrefetchMessages;
 
     public String resolveRagContext(Session session,
                                     Long userId,
@@ -55,8 +60,8 @@ public class ChatContextService {
             return ResolvedRagEvidence.disabled();
         }
         try {
-            String context = ragService.buildContext(userId, query, ragTopK);
-            return ResolvedRagEvidence.enabled(query, context, ragService.search(userId, query, ragTopK));
+            RagEvidenceResult evidence = ragService.resolveEvidence(userId, query, ragTopK);
+            return ResolvedRagEvidence.enabled(query, evidence.context(), evidence.matches());
         } catch (Exception e) {
             return ResolvedRagEvidence.disabled();
         }
@@ -68,17 +73,11 @@ public class ChatContextService {
                                                  String prompt,
                                                  String model,
                                                  String systemPrompt) {
-        List<Message> allMessages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
-                .eq(Message::getChatId, chatId)
-                .orderByAsc(Message::getCreatedAt));
-
-        Map<String, Message> messageMap = new HashMap<>();
-        for (Message message : allMessages) {
-            messageMap.put(message.getMessageId(), message);
-        }
-
-        String anchorId = resolveAnchorMessageId(parentMessageId, allMessages, messageMap);
-        List<Message> chain = buildMessageChain(anchorId, messageMap);
+        int historyLimit = Math.max(resolveMaxMessages(model), contextWindowMessages);
+        List<Message> recentMessages = loadRecentMessages(chatId, historyLimit);
+        Map<String, Message> messageMap = buildMessageMap(recentMessages);
+        String anchorId = resolveAnchorMessageId(chatId, parentMessageId, recentMessages, messageMap);
+        List<Message> chain = buildMessageChain(chatId, anchorId, messageMap, historyLimit);
 
         List<LlmMessage> result = new ArrayList<>();
         if (systemPrompt != null && !systemPrompt.isBlank()) {
@@ -104,19 +103,55 @@ public class ChatContextService {
         return trimContext(result, model);
     }
 
-    private String resolveAnchorMessageId(String parentMessageId,
-                                          List<Message> allMessages,
+    private List<Message> loadRecentMessages(String chatId, int historyLimit) {
+        int fetchLimit = Math.max(historyLimit * 2, contextPrefetchMessages);
+        List<Message> recentMessages = messageMapper.selectRecentByChatId(chatId, fetchLimit);
+        if (recentMessages == null || recentMessages.isEmpty()) {
+            return List.of();
+        }
+        List<Message> ordered = new ArrayList<>(recentMessages);
+        Collections.reverse(ordered);
+        return ordered;
+    }
+
+    private Map<String, Message> buildMessageMap(List<Message> messages) {
+        Map<String, Message> messageMap = new HashMap<>();
+        if (messages == null) {
+            return messageMap;
+        }
+        for (Message message : messages) {
+            if (message == null || !StringUtils.hasText(message.getMessageId())) {
+                continue;
+            }
+            messageMap.put(message.getMessageId(), message);
+        }
+        return messageMap;
+    }
+
+    private String resolveAnchorMessageId(String chatId,
+                                          String parentMessageId,
+                                          List<Message> recentMessages,
                                           Map<String, Message> messageMap) {
         if (parentMessageId != null && !parentMessageId.isBlank() && messageMap.containsKey(parentMessageId)) {
             return parentMessageId;
         }
-        if (!allMessages.isEmpty()) {
-            return allMessages.get(allMessages.size() - 1).getMessageId();
+        if (StringUtils.hasText(parentMessageId)) {
+            Message anchor = messageMapper.selectByChatIdAndMessageId(chatId, parentMessageId);
+            if (anchor != null && StringUtils.hasText(anchor.getMessageId())) {
+                messageMap.put(anchor.getMessageId(), anchor);
+                return anchor.getMessageId();
+            }
+        }
+        if (!recentMessages.isEmpty()) {
+            return recentMessages.get(recentMessages.size() - 1).getMessageId();
         }
         return null;
     }
 
-    private List<Message> buildMessageChain(String anchorId, Map<String, Message> messageMap) {
+    private List<Message> buildMessageChain(String chatId,
+                                            String anchorId,
+                                            Map<String, Message> messageMap,
+                                            int historyLimit) {
         if (anchorId == null) {
             return List.of();
         }
@@ -124,8 +159,17 @@ public class ChatContextService {
         List<Message> chain = new ArrayList<>();
         Set<String> visited = new HashSet<>();
         String currentId = anchorId;
-        while (currentId != null && messageMap.containsKey(currentId) && !visited.contains(currentId)) {
+        while (StringUtils.hasText(currentId)
+                && !visited.contains(currentId)
+                && chain.size() < Math.max(historyLimit, contextWindowMessages)) {
             Message message = messageMap.get(currentId);
+            if (message == null) {
+                message = messageMapper.selectByChatIdAndMessageId(chatId, currentId);
+                if (message == null) {
+                    break;
+                }
+                messageMap.put(message.getMessageId(), message);
+            }
             chain.add(message);
             visited.add(currentId);
             currentId = message.getParentMessageId();

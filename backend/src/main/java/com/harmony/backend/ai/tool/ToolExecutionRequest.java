@@ -11,4 +11,10 @@ public class ToolExecutionRequest {
     private String toolKey;
     private String input;
     private String model;
+    private String executionId;
+    private String stepKey;
+
+    public ToolExecutionRequest(String toolKey, String input, String model) {
+        this(toolKey, input, model, null, null);
+    }
 }

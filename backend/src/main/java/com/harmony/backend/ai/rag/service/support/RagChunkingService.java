@@ -9,7 +9,10 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class RagChunkingService {
@@ -97,7 +100,7 @@ public class RagChunkingService {
         }
         String normalized = content == null ? "" : content.trim();
         return new PreparedRagChunk(normalized, blockType, headings, ordinal,
-                TokenCounter.estimateTokens(normalized));
+                TokenCounter.estimateTokens(normalized), buildChunkAttributes(blocks, ordinal, normalized));
     }
 
     private List<Block> parseBlocks(String content) {
@@ -180,6 +183,9 @@ public class RagChunkingService {
     }
 
     private List<PreparedRagChunk> splitOversizedBlock(Block block, int targetTokens, int overlapTokens, int startOrdinal) {
+        if ("table".equals(block.type())) {
+            return splitOversizedTableBlock(block, targetTokens, startOrdinal);
+        }
         List<String> sentences = splitSentences(decorateWithHeading(block));
         List<PreparedRagChunk> chunks = new ArrayList<>();
         StringBuilder current = new StringBuilder();
@@ -392,6 +398,13 @@ public class RagChunkingService {
         if (!StringUtils.hasText(normalized)) {
             return List.of();
         }
+        if (looksLikeTable(normalized)) {
+            Block tableBlock = new Block("table", normalized, section == null || section.headings() == null ? List.of() : List.copyOf(section.headings()));
+            if (TokenCounter.estimateTokens(normalized) <= targetTokens) {
+                return List.of(toSectionChunk(normalized, section, startOrdinal));
+            }
+            return splitOversizedTableBlock(tableBlock, targetTokens, startOrdinal);
+        }
         if (TokenCounter.estimateTokens(normalized) <= targetTokens) {
             return List.of(toSectionChunk(normalized, section, startOrdinal));
         }
@@ -440,10 +453,173 @@ public class RagChunkingService {
             }
         }
         List<String> headings = section == null || section.headings() == null ? List.of() : List.copyOf(section.headings());
-        return new PreparedRagChunk(normalized, "section", headings, ordinal,
-                TokenCounter.estimateTokens(normalized));
+        String blockType = looksLikeTable(normalized) ? "table" : "section";
+        return new PreparedRagChunk(normalized, blockType, headings, ordinal,
+                TokenCounter.estimateTokens(normalized), buildSectionAttributes(section, ordinal, normalized));
     }
 
+
+    private Map<String, Object> buildChunkAttributes(List<Block> blocks, int ordinal, String normalized) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        if (blocks == null || blocks.isEmpty()) {
+            return attributes;
+        }
+        List<String> headings = blocks.get(blocks.size() - 1).headings();
+        attributes.put("headingPath", String.join(" > ", headings));
+        attributes.put("headingDepth", headings.size());
+        attributes.put("sourceBlockCount", blocks.size());
+        LinkedHashSet<String> sourceTypes = new LinkedHashSet<>();
+        for (Block block : blocks) {
+            sourceTypes.add(block.type());
+        }
+        attributes.put("sourceBlockTypes", List.copyOf(sourceTypes));
+        if (sourceTypes.size() == 1 && sourceTypes.contains("table")) {
+            applyTableAttributes(attributes, normalized, ordinal, 1, 1, 1);
+        } else if (sourceTypes.contains("table")) {
+            attributes.put("containsTable", true);
+        }
+        return attributes;
+    }
+
+    private Map<String, Object> buildSectionAttributes(Section section, int ordinal, String normalized) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        List<String> headings = section == null || section.headings() == null ? List.of() : List.copyOf(section.headings());
+        attributes.put("headingPath", String.join(" > ", headings));
+        attributes.put("headingDepth", headings.size());
+        attributes.put("sourceBlockCount", 1);
+        attributes.put("sourceBlockTypes", List.of("section"));
+        if (looksLikeTable(normalized)) {
+            applyTableAttributes(attributes, normalized, ordinal, 1, 1, 1);
+        }
+        return attributes;
+    }
+
+    private void applyTableAttributes(Map<String, Object> attributes,
+                                      String content,
+                                      int ordinal,
+                                      int partIndex,
+                                      int partCount,
+                                      int rowStart) {
+        List<String> lines = extractTableLines(content);
+        if (lines.isEmpty()) {
+            return;
+        }
+        int headerLines = detectHeaderLines(lines);
+        int dataRowCount = Math.max(0, lines.size() - headerLines);
+        attributes.put("tableId", "table-" + ordinal);
+        attributes.put("tablePartIndex", partIndex);
+        attributes.put("tablePartCount", partCount);
+        attributes.put("tableRowStart", dataRowCount == 0 ? 0 : rowStart);
+        attributes.put("tableRowEnd", dataRowCount == 0 ? 0 : rowStart + dataRowCount - 1);
+        attributes.put("tableRowCount", dataRowCount);
+        attributes.put("tableColumnCount", countTableColumns(lines.get(0)));
+    }
+
+    private List<PreparedRagChunk> splitOversizedTableBlock(Block block, int targetTokens, int startOrdinal) {
+        List<String> lines = extractTableLines(decorateWithHeading(block));
+        if (lines.isEmpty()) {
+            return List.of(toChunk(decorateWithHeading(block), List.of(block), startOrdinal));
+        }
+        int headerLineCount = detectHeaderLines(lines);
+        List<String> prefixLines = lines.subList(0, Math.min(headerLineCount, lines.size()));
+        List<String> dataLines = lines.subList(Math.min(headerLineCount, lines.size()), lines.size());
+        List<List<String>> parts = new ArrayList<>();
+        List<String> currentRows = new ArrayList<>();
+        for (String row : dataLines) {
+            List<String> candidateRows = new ArrayList<>(currentRows);
+            candidateRows.add(row);
+            String candidateText = buildTableChunkText(prefixLines, candidateRows);
+            if (!currentRows.isEmpty() && TokenCounter.estimateTokens(candidateText) > targetTokens) {
+                parts.add(List.copyOf(currentRows));
+                currentRows.clear();
+            }
+            currentRows.add(row);
+        }
+        if (!currentRows.isEmpty()) {
+            parts.add(List.copyOf(currentRows));
+        }
+        if (parts.isEmpty()) {
+            parts.add(List.of());
+        }
+        List<PreparedRagChunk> chunks = new ArrayList<>();
+        int rowCursor = 1;
+        for (int i = 0; i < parts.size(); i++) {
+            List<String> rows = parts.get(i);
+            String normalized = buildTableChunkText(prefixLines, rows).trim();
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            attributes.put("headingPath", String.join(" > ", block.headings()));
+            attributes.put("headingDepth", block.headings().size());
+            attributes.put("sourceBlockCount", 1);
+            attributes.put("sourceBlockTypes", List.of("table"));
+            applyTableAttributes(attributes, normalized, startOrdinal, i + 1, parts.size(), rowCursor);
+            chunks.add(new PreparedRagChunk(normalized, "table", List.copyOf(block.headings()), startOrdinal + i,
+                    TokenCounter.estimateTokens(normalized), attributes));
+            rowCursor += rows.size();
+        }
+        return chunks;
+    }
+
+    private String buildTableChunkText(List<String> prefixLines, List<String> rows) {
+        StringBuilder sb = new StringBuilder();
+        for (String line : prefixLines) {
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(line);
+        }
+        for (String row : rows) {
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(row);
+        }
+        return sb.toString();
+    }
+
+    private List<String> extractTableLines(String content) {
+        if (!StringUtils.hasText(content)) {
+            return List.of();
+        }
+        List<String> lines = new ArrayList<>();
+        for (String line : content.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("[Section]")) {
+                continue;
+            }
+            if (trimmed.startsWith("|") || trimmed.matches("^[-:| ]+$")) {
+                lines.add(trimmed);
+            }
+        }
+        return lines;
+    }
+
+    private int detectHeaderLines(List<String> lines) {
+        if (lines.size() >= 2 && lines.get(1).matches("^[-:| ]+$")) {
+            return 2;
+        }
+        return lines.isEmpty() ? 0 : 1;
+    }
+
+    private int countTableColumns(String line) {
+        if (!StringUtils.hasText(line)) {
+            return 0;
+        }
+        String normalized = line.trim();
+        if (normalized.startsWith("|")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.endsWith("|")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (!StringUtils.hasText(normalized)) {
+            return 0;
+        }
+        return normalized.split("\\|").length;
+    }
+
+    private boolean looksLikeTable(String content) {
+        return !extractTableLines(content).isEmpty();
+    }
 
     private int headingLevel(String trimmed) {
         int level = 0;

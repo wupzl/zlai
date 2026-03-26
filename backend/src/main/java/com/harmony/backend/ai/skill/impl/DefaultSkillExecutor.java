@@ -1,19 +1,19 @@
 package com.harmony.backend.ai.skill.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.harmony.backend.ai.skill.AgentSkillDefinition;
-import com.harmony.backend.ai.skill.SkillInputField;
-import com.harmony.backend.ai.skill.SkillStepDefinition;
 import com.harmony.backend.ai.skill.AgentSkillRegistry;
 import com.harmony.backend.ai.skill.SkillExecutionRequest;
 import com.harmony.backend.ai.skill.SkillExecutionResult;
 import com.harmony.backend.ai.skill.SkillExecutor;
-import com.harmony.backend.ai.tool.ExecutableAgentTool;
+import com.harmony.backend.ai.skill.SkillInputField;
+import com.harmony.backend.ai.skill.SkillStepDefinition;
 import com.harmony.backend.ai.tool.AgentToolRegistry;
+import com.harmony.backend.ai.tool.ExecutableAgentTool;
 import com.harmony.backend.ai.tool.ToolExecutionRequest;
 import com.harmony.backend.ai.tool.ToolExecutionResult;
 import com.harmony.backend.ai.tool.ToolExecutor;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,7 +22,9 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Component
@@ -70,7 +72,7 @@ public class DefaultSkillExecutor implements SkillExecutor {
                                                    List<SkillStepDefinition> steps) {
         SkillStepDefinition step = steps.get(0);
         String toolKey = step.getToolKey();
-        ToolExecutionResult toolResult = executeTool(toolKey, buildToolInput(step.getPrompt(), request.getInput()), request.getModelOverride());
+        ToolExecutionResult toolResult = executeTool(toolKey, buildToolInput(step.getPrompt(), request.getInput()), request);
         if (toolResult == null || !toolResult.isSuccess()) {
             return SkillExecutionResult.fail(toolResult != null ? toolResult.getError() : "Skill execution failed");
         }
@@ -80,7 +82,8 @@ public class DefaultSkillExecutor implements SkillExecutor {
                 toolResult.getModel(),
                 toolResult.getPromptTokens(),
                 toolResult.getCompletionTokens(),
-                List.of(toolKey)
+                List.of(toolKey),
+                metadata(definition.getKey(), List.of(toolKey), request, toolResult.getMetadata())
         );
     }
 
@@ -98,7 +101,7 @@ public class DefaultSkillExecutor implements SkillExecutor {
             if (!visitedTools.add(toolKey)) {
                 return SkillExecutionResult.fail("Skill pipeline attempted repeated tool execution: " + toolKey);
             }
-            ToolExecutionResult toolResult = executeTool(toolKey, buildToolInput(step.getPrompt(), currentInput), request.getModelOverride());
+            ToolExecutionResult toolResult = executeTool(toolKey, buildToolInput(step.getPrompt(), currentInput), request);
             if (toolResult == null || !toolResult.isSuccess()) {
                 return SkillExecutionResult.fail(toolResult != null ? toolResult.getError() : "Skill pipeline failed");
             }
@@ -109,22 +112,15 @@ public class DefaultSkillExecutor implements SkillExecutor {
             usedTools.add(toolKey);
         }
         log.info("Skill pipeline success: skillKey={}, usedTools={}", definition.getKey(), usedTools);
-        return SkillExecutionResult.ok(
-                currentInput,
-                lastModel,
-                promptTokens,
-                completionTokens,
-                usedTools
-        );
+        return SkillExecutionResult.ok(currentInput, lastModel, promptTokens, completionTokens, usedTools,
+                metadata(definition.getKey(), usedTools, request, Map.of("pipeline", true)));
     }
 
     private List<SkillStepDefinition> resolveSteps(AgentSkillDefinition definition) {
         if (definition.getStepConfig() != null && !definition.getStepConfig().isEmpty()) {
             return definition.getStepConfig();
         }
-        return definition.getToolKeys().stream()
-                .map(toolKey -> new SkillStepDefinition(toolKey, null))
-                .toList();
+        return definition.getToolKeys().stream().map(toolKey -> new SkillStepDefinition(toolKey, null)).toList();
     }
 
     private String buildToolInput(String prompt, String input) {
@@ -137,13 +133,25 @@ public class DefaultSkillExecutor implements SkillExecutor {
         return prompt.trim() + "\n\nInput:\n" + input;
     }
 
-    private ToolExecutionResult executeTool(String toolKey, String input, String modelOverride) {
-        ToolExecutionRequest toolRequest = new ToolExecutionRequest(toolKey, input, modelOverride);
+    private ToolExecutionResult executeTool(String toolKey, String input, SkillExecutionRequest request) {
+        ToolExecutionRequest toolRequest = new ToolExecutionRequest(toolKey, input, request.getModelOverride(), request.getExecutionId(), request.getStepKey());
         ExecutableAgentTool executableTool = toolRegistry.getExecutable(toolKey);
         if (executableTool != null) {
             return executableTool.execute(toolRequest);
         }
         return toolExecutor.execute(toolRequest);
+    }
+
+    private Map<String, Object> metadata(String skillKey, List<String> usedTools, SkillExecutionRequest request, Map<String, Object> extra) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("skill_key", skillKey);
+        metadata.put("used_tools", usedTools);
+        metadata.put("execution_id", request.getExecutionId());
+        metadata.put("step_key", request.getStepKey());
+        if (extra != null && !extra.isEmpty()) {
+            metadata.putAll(extra);
+        }
+        return metadata;
     }
 
     private String validateInput(AgentSkillDefinition definition, String input) {

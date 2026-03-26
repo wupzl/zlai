@@ -1,5 +1,7 @@
 package com.harmony.backend.modules.user.service;
 
+import com.harmony.backend.common.entity.User;
+
 import java.util.Date;
 
 /**
@@ -26,4 +28,9 @@ public interface UserSecurityService {
      * Update user's last active time asynchronously.
      */
     void updateLastActiveTime(Long userId);
+
+    /**
+     * Read a short-lived cached user snapshot for auth hot paths.
+     */
+    User getCachedUser(Long userId);
 }

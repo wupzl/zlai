@@ -50,7 +50,8 @@
             <div v-else-if="citation.sectionHeading" class="citation-heading">
               {{ citation.sectionHeading }}
             </div>
-            <div v-if="citation.excerpt" class="citation-excerpt">{{ citation.excerpt }}</div>
+            <div v-if="citation.sourcePath" class="citation-heading">{{ citation.sourcePath }}</div>
+            <div v-if="citation.excerpt" class="citation-excerpt">{{ formatCitationExcerpt(citation.excerpt) }}</div>
           </div>
         </div>
         <div v-if="msg.role === 'assistant' && msg.status === 'INTERRUPTED'" class="message-state interrupted">
@@ -136,6 +137,10 @@ export default {
     groundingClass(msg) {
       const status = msg?.grounding?.status || "";
       return status ? `grounding-${status}` : "";
+    },
+    formatCitationExcerpt(excerpt) {
+      if (!excerpt) return "";
+      return String(excerpt).replace(/\s+/g, " ").trim();
     },
     getSiblingBranches(msg) {
       if (!msg) return [];

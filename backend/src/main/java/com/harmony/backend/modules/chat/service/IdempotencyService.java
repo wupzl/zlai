@@ -18,10 +18,12 @@ public interface IdempotencyService {
     final class IdempotencyTicket {
         private final ChatRequestIdempotency record;
         private final String replayResponse;
+        private final boolean inProgress;
 
-        public IdempotencyTicket(ChatRequestIdempotency record, String replayResponse) {
+        public IdempotencyTicket(ChatRequestIdempotency record, String replayResponse, boolean inProgress) {
             this.record = record;
             this.replayResponse = replayResponse;
+            this.inProgress = inProgress;
         }
 
         public ChatRequestIdempotency getRecord() {
@@ -30,6 +32,10 @@ public interface IdempotencyService {
 
         public String getReplayResponse() {
             return replayResponse;
+        }
+
+        public boolean isInProgress() {
+            return inProgress;
         }
     }
 }

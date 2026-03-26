@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 public class RagChunkCandidate {
     private Long id;
     private String docId;
+    private String docTitle;
     private String content;
     private float[] embedding;
     private double distance;

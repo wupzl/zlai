@@ -24,7 +24,7 @@ public class IdempotencyServiceImpl implements IdempotencyService {
     public IdempotencyTicket acquire(Long userId, String requestId, String requestType,
                                      String chatId, String messageId, String requestHash, int regenerateDedupSeconds) {
         if (requestId == null || requestId.isBlank()) {
-            return new IdempotencyTicket(null, null);
+            return new IdempotencyTicket(null, null, false);
         }
         ChatRequestIdempotency record = chatRequestIdempotencyMapper.selectOne(
                 new LambdaQueryWrapper<ChatRequestIdempotency>()
@@ -49,7 +49,7 @@ public class IdempotencyServiceImpl implements IdempotencyService {
                         .status(IdempotencyStatus.PENDING)
                         .build();
                 chatRequestIdempotencyMapper.insert(toInsert);
-                return new IdempotencyTicket(toInsert, null);
+                return new IdempotencyTicket(toInsert, null, false);
             } catch (DuplicateKeyException e) {
                 record = chatRequestIdempotencyMapper.selectOne(
                         new LambdaQueryWrapper<ChatRequestIdempotency>()
@@ -59,13 +59,13 @@ public class IdempotencyServiceImpl implements IdempotencyService {
             }
         }
         if (record == null) {
-            return new IdempotencyTicket(null, null);
+            return new IdempotencyTicket(null, null, false);
         }
         if (record.getRequestHash() != null && requestHash != null && !requestHash.equals(record.getRequestHash())) {
             throw new IllegalStateException("requestId already used with different payload");
         }
         if (IdempotencyStatus.DONE.equalsIgnoreCase(record.getStatus())) {
-            return new IdempotencyTicket(record, record.getResponseContent() == null ? "" : record.getResponseContent());
+            return new IdempotencyTicket(record, record.getResponseContent() == null ? "" : record.getResponseContent(), false);
         }
         if (IdempotencyStatus.FAILED.equalsIgnoreCase(record.getStatus())
                 || IdempotencyStatus.INTERRUPTED.equalsIgnoreCase(record.getStatus())) {
@@ -75,9 +75,9 @@ public class IdempotencyServiceImpl implements IdempotencyService {
             update.setErrorMessage(null);
             chatRequestIdempotencyMapper.updateById(update);
             record.setStatus(IdempotencyStatus.PENDING);
-            return new IdempotencyTicket(record, null);
+            return new IdempotencyTicket(record, null, false);
         }
-        return new IdempotencyTicket(record, null);
+        return new IdempotencyTicket(record, null, true);
     }
 
     @Override
@@ -156,10 +156,10 @@ public class IdempotencyServiceImpl implements IdempotencyService {
             return null;
         }
         if (IdempotencyStatus.DONE.equalsIgnoreCase(latest.getStatus())) {
-            return new IdempotencyTicket(latest, latest.getResponseContent() == null ? "" : latest.getResponseContent());
+            return new IdempotencyTicket(latest, latest.getResponseContent() == null ? "" : latest.getResponseContent(), false);
         }
         if (IdempotencyStatus.PENDING.equalsIgnoreCase(latest.getStatus())) {
-            return new IdempotencyTicket(latest, null);
+            return new IdempotencyTicket(latest, null, true);
         }
         return null;
     }

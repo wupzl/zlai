@@ -16,6 +16,7 @@ describe("ChatMessageList citation-bearing messages", () => {
               {
                 docId: "doc-1",
                 title: "distributed-systems.md",
+                sourcePath: "notes/distributed-systems.md",
                 excerpt: "CAP theorem excerpt"
               }
             ],
@@ -39,6 +40,7 @@ describe("ChatMessageList citation-bearing messages", () => {
     expect(wrapper.text()).toContain("Grounded");
     expect(wrapper.text()).toContain("Sources");
     expect(wrapper.text()).toContain("distributed-systems.md");
+    expect(wrapper.text()).toContain("notes/distributed-systems.md");
     expect(wrapper.text()).toContain("CAP theorem excerpt");
     expect(wrapper.find(".message.assistant").exists()).toBe(true);
   });

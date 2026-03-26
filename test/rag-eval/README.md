@@ -1,53 +1,44 @@
 # RAG Eval Workspace
 
-这个目录用于安全地准备 RAG 评测资料，不会直接修改原始学习资料目录。
+This directory contains two layers:
 
-流程分两步：
+1. Simple script-first retrieval comparison flow
+2. Optional stricter benchmark scaffolding for later automation
 
-1. 先复制并归一化资料目录
+## Recommended Starting Point
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\test\rag-eval\normalize-study-resource.ps1 `
-  -SourceDir 'D:\StudyResources\JavaStudyResource' `
-  -WorkspaceDir '.\test\rag-eval\workspace'
-```
+Under the current charter, start with the raw-data smoke benchmark first:
 
-输出：
+- Charter: [docs/rag-retrieval-benchmark-charter.md](/D:/Code/zlAI-v2/docs/rag-retrieval-benchmark-charter.md)
+- Raw dataset README: [test/rag-eval/datasets/raw/README.md](/D:/Code/zlAI-v2/test/rag-eval/datasets/raw/README.md)
+- Raw smoke corpus: [test/rag-eval/datasets/raw/corpus_manifest.raw.smoke.jsonl](/D:/Code/zlAI-v2/test/rag-eval/datasets/raw/corpus_manifest.raw.smoke.jsonl)
+- Raw smoke questions: [test/rag-eval/datasets/raw/questions.raw.smoke.jsonl](/D:/Code/zlAI-v2/test/rag-eval/datasets/raw/questions.raw.smoke.jsonl)
+- Raw smoke qrels: [test/rag-eval/datasets/raw/qrels.raw.smoke.jsonl](/D:/Code/zlAI-v2/test/rag-eval/datasets/raw/qrels.raw.smoke.jsonl)
 
-- `workspace\copied`：原始资料副本
-- `workspace\normalized`：转成 UTF-8 的归一化副本
-- `workspace\manifest.json`：迁移和编码探测结果
+The older simple flow and normalized datasets are still useful, but now they should be treated as diagnostic support rather than the primary benchmark conclusion.
 
-2. 再从归一化副本生成评测集草案
+- Simple flow: [test/rag-eval/simple-flow.md](/D:/Code/zlAI-v2/test/rag-eval/simple-flow.md)
+- Simple `zlAI` script: [test/rag-eval/run-zlai-retrieval-benchmark.ps1](/D:/Code/zlAI-v2/test/rag-eval/run-zlai-retrieval-benchmark.ps1)
+- Dataset schema: [test/rag-eval/datasets/README.md](/D:/Code/zlAI-v2/test/rag-eval/datasets/README.md)
+- Runner contract: [test/rag-eval/runner-contract.md](/D:/Code/zlAI-v2/test/rag-eval/runner-contract.md)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\test\rag-eval\generate-rag-eval-set.ps1 `
-  -NormalizedDir '.\test\rag-eval\workspace\normalized' `
-  -OutputDir '.\test\rag-eval\output'
-```
+## Optional Advanced Docs
 
-输出：
+These are useful later if you want a stricter local benchmark flow:
 
-- `output\rag-eval.jsonl`：评测样本
-- `output\rag-eval-summary.json`：统计信息
+- zlAI runner design: [test/rag-eval/zlai-runner-design.md](/D:/Code/zlAI-v2/test/rag-eval/zlai-runner-design.md)
+- Config templates:
+  - [test/rag-eval/configs/aligned.template.yaml](/D:/Code/zlAI-v2/test/rag-eval/configs/aligned.template.yaml)
+  - [test/rag-eval/configs/system-track.template.yaml](/D:/Code/zlAI-v2/test/rag-eval/configs/system-track.template.yaml)
+  - [test/rag-eval/configs/retriever-track.template.yaml](/D:/Code/zlAI-v2/test/rag-eval/configs/retriever-track.template.yaml)
+- Analysis guide: [test/rag-eval/analysis/README.md](/D:/Code/zlAI-v2/test/rag-eval/analysis/README.md)
 
-当前生成的是第一版启发式评测集，样本分三类：
+## Existing Older Local Regression Scripts
 
-- `document_summary`：按文件名总结整篇文档
-- `file_name_summary`：显式提文件名做整篇总结
-- `section_summary`：按章节提问
+This repository also contains the earlier local RAG regression scripts:
 
-这个评测集更适合先验证两类能力：
+- `normalize-study-resource.ps1`
+- `generate-rag-eval-set.ps1`
+- `run-rag-eval.ps1`
 
-- 文件级召回是否能命中文档整体
-- 章节覆盖是否比单纯 chunk 拼接更完整
-
-3. Run local RAG eval
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\test\rag-eval\run-rag-eval.ps1 `
-  -BaseUrl 'http://127.0.0.1:8080' `
-  -EvalFile '.\test\rag-eval\output-java-study-resource\rag-eval.jsonl' `
-  -OutputDir '.\test\rag-eval\results' `
-  -BearerToken '<your-jwt>'
-```
+Those are still useful for older interface-level regression, but the new simple retrieval script is the easier starting point for `zlAI` vs `LlamaIndex` comparison.

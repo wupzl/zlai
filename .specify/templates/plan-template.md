@@ -1,4 +1,4 @@
-﻿# Implementation Plan: [FEATURE]
+# Implementation Plan: [FEATURE]
 
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]  
 **Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
@@ -6,6 +6,19 @@
 ## Summary
 
 [Summarize the user value, primary technical approach, and major constraints]
+
+## Solution Options
+
+*Required for any non-trivial modification. List 2 to 4 realistic options before implementation and choose one.*
+
+| Option | Description | Robustness | Maintainability | Extensibility | Concurrency / Performance | Complexity | Main Risks |
+|--------|-------------|------------|-----------------|---------------|---------------------------|------------|------------|
+| A | [approach] | [assessment] | [assessment] | [assessment] | [assessment] | [assessment] | [risk] |
+| B | [approach] | [assessment] | [assessment] | [assessment] | [assessment] | [assessment] | [risk] |
+| C | [optional approach] | [assessment] | [assessment] | [assessment] | [assessment] | [assessment] | [risk] |
+| D | [optional approach] | [assessment] | [assessment] | [assessment] | [assessment] | [assessment] | [risk] |
+
+**Selected Approach**: [chosen option and why it is the best fit here]
 
 ## Technical Context
 
@@ -24,9 +37,11 @@
 *GATE: Must pass before research and design start. Re-check after design is complete.*
 
 - **Core User Chain Stability**: [How the affected user chain is protected]
+- **Solution Option Review**: [Which 2 to 4 options were compared and why the selected one is preferred]
 - **Module Boundary Integrity**: [How responsibilities are kept separated]
 - **Skill Contract First**: [If skill-layer is involved, define skill type, trigger, contract, fallback]
 - **Observability & Governance**: [How traces, logs, admin visibility, and config control are handled]
+- **Concurrency / Capacity Safety**: [How races, backpressure, queue limits, retries, timeouts, and overload behavior are handled]
 - **Risk-Aligned Testing**: [What automated/manual verification will cover and why]
 
 ## Project Structure

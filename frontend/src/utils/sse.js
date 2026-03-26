@@ -1,8 +1,64 @@
 import { authFetch } from "../api";
 
+/**
+ * T004: Robust SSE Streaming Parser
+ * Handles fragmented TCP packets and line-based SSE format (\n\n as message delimiter)
+ */
+class SSEParser {
+  constructor(onEvent) {
+    this.onEvent = onEvent;
+    this.buffer = "";
+  }
+
+  feed(chunk) {
+    this.buffer += chunk;
+    this.buffer = this.buffer.replace(/\r\n/g, "\n");
+
+    // SSE messages are delimited by double newlines (\n\n)
+    let boundary;
+    while ((boundary = this.buffer.indexOf("\n\n")) !== -1) {
+      const messageBlock = this.buffer.slice(0, boundary);
+      this.buffer = this.buffer.slice(boundary + 2);
+      this.parseMessage(messageBlock);
+    }
+  }
+
+  parseMessage(block) {
+    if (!block.trim()) return;
+
+    const lines = block.split("\n");
+    let eventType = "message";
+    let dataBuffer = "";
+
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventType = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        const dataPart = line.slice(5).trimStart();
+        dataBuffer = dataBuffer ? `${dataBuffer}\n${dataPart}` : dataPart;
+      }
+    }
+
+    if (dataBuffer) {
+      this.onEvent?.(eventType, dataBuffer);
+    }
+  }
+
+  flush() {
+    if (this.buffer.trim()) {
+      this.parseMessage(this.buffer);
+      this.buffer = "";
+    }
+  }
+}
+
+/**
+ * streamChat implementation with AbortController and robust buffer handling
+ */
 export async function streamChat(path, payload, onEvent) {
   const controller = new AbortController();
-  let closedByClient = false;
+  let isClosed = false;
+
   const res = await authFetch(path, {
     method: "POST",
     headers: {
@@ -11,91 +67,43 @@ export async function streamChat(path, payload, onEvent) {
     body: JSON.stringify(payload),
     signal: controller.signal
   });
+
   if (!res.ok || !res.body) {
-    const message = await res.text().catch(() => "");
-    throw new Error(message || "Stream request failed");
+    const errorText = await res.text().catch(() => "Stream initiation failed");
+    throw new Error(errorText || `HTTP ${res.status}`);
   }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder("utf-8");
-  let buffer = "";
+  const parser = new SSEParser(onEvent);
 
-  function parseChunk(rawChunk) {
-    const chunk = rawChunk.trim();
-    if (!chunk) return null;
-    const lines = chunk.split("\n");
-    let event = "message";
-    let data = "";
-    for (const line of lines) {
-      if (line.startsWith("event:")) {
-        event = line.replace("event:", "").trim();
-      } else if (line.startsWith("data:")) {
-        const part = line.slice(5).trimStart();
-        data = data ? `${data}\n${part}` : part;
-      }
-    }
-    return { event, data };
-  }
-
-  function emitChunk(rawChunk) {
-    const parsed = parseChunk(rawChunk);
-    if (!parsed) return null;
-    onEvent?.(parsed.event, parsed.data);
-    return parsed;
-  }
-
-  function resolveStreamError(parsed) {
-    if (!parsed || parsed.event !== "error") {
-      return null;
-    }
-    try {
-      const payload = parsed.data ? JSON.parse(parsed.data) : {};
-      return payload.error || "Stream failed";
-    } catch {
-      return "Stream failed";
-    }
-  }
-
-  async function read() {
-    let streamError = null;
+  const processStream = async () => {
     try {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        buffer = buffer.replace(/\r\n/g, "\n");
-        let idx;
-        while ((idx = buffer.indexOf("\n\n")) !== -1) {
-          const chunk = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 2);
-          const parsed = emitChunk(chunk);
-          streamError = streamError || resolveStreamError(parsed);
-        }
-      }
-    } catch (error) {
-      if (closedByClient || error?.name === "AbortError") {
-        const aborted = new Error("Stream aborted");
-        aborted.name = "StreamAborted";
-        throw aborted;
-      }
-      throw error;
-    }
-    const finalChunk = buffer.trim();
-    if (finalChunk) {
-      const parsed = emitChunk(finalChunk);
-      streamError = streamError || resolveStreamError(parsed);
-    }
-    if (streamError) {
-      throw new Error(streamError);
-    }
-  }
 
-  const promise = read();
+        const chunk = decoder.decode(value, { stream: true });
+        parser.feed(chunk);
+      }
+      parser.flush();
+    } catch (err) {
+      if (isClosed || err?.name === "AbortError") {
+        const abortErr = new Error("Stream aborted by user");
+        abortErr.name = "StreamAborted";
+        throw abortErr;
+      }
+      throw err;
+    } finally {
+      reader.releaseLock();
+    }
+  };
+
   return {
     close() {
-      closedByClient = true;
+      isClosed = true;
       controller.abort();
     },
-    done: promise
+    done: processStream()
   };
 }

@@ -1,6 +1,7 @@
 package com.harmony.backend.ai.rag.service;
 
 import com.harmony.backend.ai.rag.model.RagChunkMatch;
+import com.harmony.backend.ai.rag.model.RagEvidenceResult;
 import com.harmony.backend.ai.rag.model.RagDocumentSummary;
 import com.harmony.backend.common.response.PageResult;
 
@@ -14,6 +15,8 @@ public interface RagService {
                                     java.util.Map<String, byte[]> images);
 
     List<RagChunkMatch> search(Long userId, String query, Integer topK);
+
+    RagEvidenceResult resolveEvidence(Long userId, String query, Integer topK);
 
     String buildContext(Long userId, String query, Integer topK);
 

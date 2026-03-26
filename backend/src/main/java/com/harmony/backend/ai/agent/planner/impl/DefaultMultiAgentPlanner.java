@@ -3,6 +3,7 @@ package com.harmony.backend.ai.agent.planner.impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.harmony.backend.ai.agent.model.TeamAgentRuntime;
 import com.harmony.backend.ai.agent.planner.MultiAgentPlan;
+import com.harmony.backend.ai.agent.planner.MultiAgentPlanStep;
 import com.harmony.backend.ai.agent.planner.MultiAgentPlanner;
 import com.harmony.backend.common.entity.Agent;
 import com.harmony.backend.modules.chat.adapter.LlmAdapter;
@@ -50,10 +51,8 @@ public class DefaultMultiAgentPlanner implements MultiAgentPlanner {
         String userPrompt = extractLastUserPrompt(contextMessages);
         RankedAgents ranked = rankAgents(userPrompt, teamAgents);
         MultiAgentPlan rulePlan = buildRulePlan(userPrompt, ranked);
-        if (!shouldUseLlmPlanner(userPrompt, ranked)) {
-            return rulePlan;
-        }
-        if (!llmPlannerEnabled) {
+        if (!shouldUseLlmPlanner(userPrompt, ranked) || !llmPlannerEnabled) {
+            rulePlan.deriveStepsIfMissing();
             return rulePlan;
         }
         try {
@@ -63,12 +62,13 @@ public class DefaultMultiAgentPlanner implements MultiAgentPlanner {
             plannerMessages.add(new LlmMessage("system", """
                     You are a system planner for multi-agent workflow routing.
                     You are not the manager persona and must ignore any manager style instructions.
-                    Output JSON only: {"selectedAgentIds":["..."],"parallel":true,"reason":"..."}.
+                    Output JSON only: {"selectedAgentIds":["..."],"parallel":true,"reason":"...","steps":[{"order":1,"agentId":"...","stepType":"SPECIALIST","dependsOnPriorSteps":false,"objective":"..."}]}.
                     Rules:
                     - Select only the minimum useful agents from the provided candidates.
                     - Select at most 3 agents.
                     - Prefer exactly 1 agent if that is sufficient.
                     - Use parallel=false when later specialists should see prior specialist findings.
+                    - Step order must match selected agents.
                     - If uncertain, choose the smaller set.
                     """.trim()));
             plannerMessages.add(new LlmMessage("user",
@@ -78,11 +78,13 @@ public class DefaultMultiAgentPlanner implements MultiAgentPlanner {
             if (parsed != null && parsed.getSelectedAgentIds() != null && !parsed.getSelectedAgentIds().isEmpty()) {
                 parsed.setUsedLlmPlanner(true);
                 parsed.setConfidence(Math.max(parsed.getConfidence(), 0.7));
+                parsed.deriveStepsIfMissing();
                 return parsed;
             }
         } catch (Exception e) {
             log.warn("Planner fallback to rule plan: {}", e.getMessage());
         }
+        rulePlan.deriveStepsIfMissing();
         return rulePlan;
     }
 
@@ -112,6 +114,7 @@ public class DefaultMultiAgentPlanner implements MultiAgentPlanner {
             plan.setSelectedAgentIds(List.of());
             plan.setParallel(true);
             plan.setReason("no ranked agents available");
+            plan.setSteps(List.of());
             return plan;
         }
         List<TeamAgentRuntime> topCandidates = ranked.topCandidates();
@@ -132,10 +135,18 @@ public class DefaultMultiAgentPlanner implements MultiAgentPlanner {
         }
         plan.setSelectedAgentIds(selected);
         plan.setParallel(complex && selected.size() > 1 && !hasDependencyCue(userPrompt));
-        plan.setReason(!complex && gap >= ruleAutoGap
-                ? "rule-selected single dominant specialist"
-                : "rule-selected top candidate set");
+        plan.setReason(!complex && gap >= ruleAutoGap ? "rule-selected single dominant specialist" : "rule-selected top candidate set");
+        plan.setSteps(buildRuleSteps(plan));
         return plan;
+    }
+
+    private List<MultiAgentPlanStep> buildRuleSteps(MultiAgentPlan plan) {
+        List<String> ids = plan.getSelectedAgentIds() == null ? List.of() : plan.getSelectedAgentIds();
+        List<MultiAgentPlanStep> steps = new ArrayList<>();
+        for (int i = 0; i < ids.size(); i++) {
+            steps.add(new MultiAgentPlanStep(i + 1, ids.get(i), "SPECIALIST", !plan.isParallel() && i > 0, plan.getReason()));
+        }
+        return steps;
     }
 
     private RankedAgents rankAgents(String userPrompt, List<TeamAgentRuntime> teamAgents) {
@@ -168,37 +179,21 @@ public class DefaultMultiAgentPlanner implements MultiAgentPlanner {
         }
         scored.sort(Comparator.comparingInt(ScoredRuntime::score).reversed());
         int limit = Math.max(1, Math.min(3, plannerCandidateLimit));
-        List<TeamAgentRuntime> topCandidates = scored.stream()
-                .filter(item -> item.score() > 0)
-                .limit(limit)
-                .map(ScoredRuntime::runtime)
-                .toList();
+        List<TeamAgentRuntime> topCandidates = scored.stream().filter(item -> item.score() > 0).limit(limit).map(ScoredRuntime::runtime).toList();
         return new RankedAgents(scored, topCandidates);
     }
 
     private boolean hasComplexTaskCue(String userPrompt) {
         String prompt = safe(userPrompt).toLowerCase();
-        return prompt.contains("compare")
-                || prompt.contains("analysis")
-                || prompt.contains("research")
-                || prompt.contains("plan")
-                || prompt.contains("recommend")
-                || prompt.contains("difference")
-                || prompt.contains("\u65b9\u6848")
-                || prompt.contains("\u5bf9\u6bd4")
-                || prompt.contains("\u5206\u6790")
-                || prompt.contains("\u8c03\u7814");
+        return prompt.contains("compare") || prompt.contains("analysis") || prompt.contains("research") || prompt.contains("plan")
+                || prompt.contains("recommend") || prompt.contains("difference") || prompt.contains("plan")
+                || prompt.contains("compare") || prompt.contains("analysis") || prompt.contains("research");
     }
 
     private boolean hasDependencyCue(String userPrompt) {
         String prompt = safe(userPrompt).toLowerCase();
-        return prompt.contains("then")
-                || prompt.contains("based on")
-                || prompt.contains("after")
-                || prompt.contains("\u5148")
-                || prompt.contains("\u518d")
-                || prompt.contains("\u7136\u540e")
-                || prompt.contains("\u57fa\u4e8e");
+        return prompt.contains("then") || prompt.contains("based on") || prompt.contains("after")
+                || prompt.contains("first") || prompt.contains("next") || prompt.contains("then") || prompt.contains("based");
     }
 
     private double confidenceFromRanking(RankedAgents ranked) {
@@ -259,6 +254,9 @@ public class DefaultMultiAgentPlanner implements MultiAgentPlanner {
                 }
             }
             plan.setSelectedAgentIds(plan.getSelectedAgentIds().stream().filter(valid::contains).limit(3).toList());
+            if (plan.getSteps() != null && !plan.getSteps().isEmpty()) {
+                plan.setSteps(plan.getSteps().stream().filter(step -> valid.contains(step.getAgentId())).limit(3).toList());
+            }
             return plan;
         } catch (Exception e) {
             return null;
@@ -303,3 +301,4 @@ public class DefaultMultiAgentPlanner implements MultiAgentPlanner {
 
     private record RankedAgents(List<ScoredRuntime> scored, List<TeamAgentRuntime> topCandidates) {}
 }
+

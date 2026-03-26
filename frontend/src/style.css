@@ -1374,6 +1374,7 @@ label {
 .citation-item {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .citation-title {
@@ -1397,7 +1398,9 @@ label {
 .citation-excerpt {
   font-size: 12px;
   color: var(--ink);
-  white-space: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   line-height: 1.45;
 }
 

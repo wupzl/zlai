@@ -1,6 +1,7 @@
 package com.harmony.backend.ai.rag.service.impl;
 
 import com.harmony.backend.ai.rag.model.RagChunkMatch;
+import com.harmony.backend.ai.rag.model.RagEvidenceResult;
 import com.harmony.backend.ai.rag.model.RagDocumentSummary;
 import com.harmony.backend.ai.rag.service.RagService;
 import com.harmony.backend.common.response.PageResult;
@@ -27,6 +28,11 @@ public class NoopRagService implements RagService {
     @Override
     public List<RagChunkMatch> search(Long userId, String query, Integer topK) {
         return List.of();
+    }
+
+    @Override
+    public RagEvidenceResult resolveEvidence(Long userId, String query, Integer topK) {
+        return RagEvidenceResult.empty();
     }
 
     @Override

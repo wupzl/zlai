@@ -12,6 +12,7 @@ import com.harmony.backend.common.event.ChatMessageEvent;
 import com.harmony.backend.common.exception.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.harmony.backend.ai.agent.runtime.AgentRuntimeBridgeService;
 import com.harmony.backend.ai.agent.runtime.MultiAgentOrchestrator;
 import com.harmony.backend.ai.agent.model.TeamAgentRuntime;
 import com.harmony.backend.common.mapper.TokenConsumptionMapper;
@@ -46,6 +47,7 @@ import com.harmony.backend.modules.chat.service.support.GroundingFallbackService
 import com.harmony.backend.modules.chat.service.support.GroundingTraceService;
 import com.harmony.backend.modules.chat.service.support.RagCitationService;
 import com.harmony.backend.modules.chat.service.support.ChatSessionSupportService;
+import com.harmony.backend.modules.chat.service.support.ChatSyncResponseService;
 import com.harmony.backend.modules.chat.service.support.ChatToolSupportService;
 import com.harmony.backend.modules.chat.service.support.ChatWorkflowSupport;
 import com.harmony.backend.modules.chat.service.support.ToolFollowupService;
@@ -84,6 +86,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
     private final ObjectMapper objectMapper;
     private final BillingProperties billingProperties;
     private final MultiAgentOrchestrator multiAgentOrchestrator;
+    private final AgentRuntimeBridgeService agentRuntimeBridgeService;
     private final ChatBloomFilterService bloomFilterService;
     private final ChatPromptService chatPromptService;
     private final BillingService billingService;
@@ -99,6 +102,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
     private final GroundingTraceService groundingTraceService;
     private final RagCitationService ragCitationService;
     private final ChatSessionSupportService chatSessionSupportService;
+    private final ChatSyncResponseService chatSyncResponseService;
     private final ChatToolSupportService chatToolSupportService;
     private final AgentMemoryService agentMemoryService;
     private final ToolFollowupService toolFollowupService;
@@ -152,6 +156,9 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         if (idempotency.getReplayResponse() != null) {
             return Flux.just(idempotency.getReplayResponse());
         }
+        if (idempotency.isInProgress()) {
+            throw new BusinessException(409, "requestId is already being processed");
+        }
         try {
         PreparedChatStream prepared = inTransaction(() -> prepareChatStream(
                 userId, chatId, prompt, parentMessageId, messageId, gptId, agentId, model, toolModel,
@@ -168,7 +175,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                         if (!teamAgents.isEmpty()) {
                             usageRecorder = (toolModelName, pTokens, cTokens) ->
                                     recordToolConsumption(preparedState.getSession(), preparedState.getAssistantMessageId(), toolModelName, pTokens, cTokens);
-                            return multiAgentOrchestrator.streamTeam(preparedState.getMessages(), preparedState.getFinalModel(),
+                            return agentRuntimeBridgeService.runStream(preparedState.getMessages(), preparedState.getFinalModel(),
                                     preparedState.getSessionAgent(), teamAgents, adapterRegistry, usageRecorder,
                                     userId, chatId, preparedState.getAssistantMessageId());
                         }
@@ -263,6 +270,9 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         if (idempotency.getReplayResponse() != null) {
             return Flux.just(idempotency.getReplayResponse());
         }
+        if (idempotency.isInProgress()) {
+            throw new BusinessException(409, "requestId is already being processed");
+        }
         try {
         PreparedRegenerateStream prepared = inTransaction(() -> prepareRegenerateStream(
                 userId, chatId, assistantMessageId, gptId, agentId, model, toolModel,
@@ -277,7 +287,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                                 if (!teamAgents.isEmpty()) {
                                     usageRecorder = (toolModelName, pTokens, cTokens) ->
                                             recordToolConsumption(preparedState.getSession(), preparedState.getNewAssistantMessageId(), toolModelName, pTokens, cTokens);
-                                    return multiAgentOrchestrator.streamTeam(preparedState.getMessages(), preparedState.getFinalModel(),
+                                    return agentRuntimeBridgeService.runStream(preparedState.getMessages(), preparedState.getFinalModel(),
                                             preparedState.getSessionAgent(), teamAgents, adapterRegistry, usageRecorder,
                                             userId, chatId, preparedState.getNewAssistantMessageId());
                                 }
@@ -355,7 +365,10 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                 gptId, agentId, model, toolModel, useRag, ragQuery, ragTopK);
         ChatIdempotencyGate idempotency = acquireIdempotency(userId, requestId, "CHAT_SYNC", chatId, messageId, requestHash);
         if (idempotency.getReplayResponse() != null) {
-            return decodeSyncReplayResponse(idempotency.getReplayResponse());
+            return chatSyncResponseService.decodeReplayResponse(idempotency.getReplayResponse());
+        }
+        if (idempotency.isInProgress()) {
+            throw new BusinessException(409, "requestId is already being processed");
         }
         PreparedSyncMessage prepared = inTransaction(() -> prepareSyncMessage(
                 userId, chatId, prompt, parentMessageId, messageId, gptId, agentId, model, toolModel,
@@ -375,7 +388,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                         });
                         MultiAgentOrchestrator.ToolUsageRecorder usageRecorder = (toolModelName, pTokens, cTokens) ->
                                 recordToolConsumption(preparedState.getSession(), assistantMessageId, toolModelName, pTokens, cTokens);
-                        assistantContent = multiAgentOrchestrator.runTeam(preparedState.getMessages(), preparedState.getFinalModel(),
+                        assistantContent = agentRuntimeBridgeService.runSync(preparedState.getMessages(), preparedState.getFinalModel(),
                                 preparedState.getSessionAgent(), teamAgents, adapterRegistry, usageRecorder,
                                 userId, chatId, assistantMessageId);
                         return finalizeSyncResponse(preparedState, gate, assistantMessageId, assistantContent);
@@ -455,7 +468,14 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         try {
             IdempotencyService.IdempotencyTicket ticket = idempotencyService.acquire(
                     userId, requestId, requestType, chatId, messageId, requestHash, regenerateDedupSeconds);
-            return new ChatIdempotencyGate(ticket.getRecord(), ticket.getReplayResponse());
+            if (ticket.getReplayResponse() != null) {
+                log.info("Idempotency replay hit: userId={}, requestType={}, requestId={}, chatId={}",
+                        userId, requestType, requestId, chatId);
+            } else if (ticket.isInProgress()) {
+                log.warn("Duplicate in-flight request suppressed: userId={}, requestType={}, requestId={}, chatId={}",
+                        userId, requestType, requestId, chatId);
+            }
+            return new ChatIdempotencyGate(ticket.getRecord(), ticket.getReplayResponse(), ticket.isInProgress());
         } catch (IllegalStateException e) {
             throw new BusinessException(409, e.getMessage());
         }
@@ -700,7 +720,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
                 groundingAssessment,
                 citationDiagnostics
         );
-        Object responsePayload = buildSyncResponsePayload(userVisibleContent, responseCitations, groundingAssessment);
+        Object responsePayload = chatSyncResponseService.buildPayload(userVisibleContent, responseCitations, groundingAssessment);
         if (preparedState.getRagEvidence() != null && preparedState.getRagEvidence().isEnabled()) {
             log.info("RAG grounding diagnostics: chatId={}, assistantMessageId={}, status={}, groundingScore={}, fallbackReason={}, policyVersion={}, downgraded={}, evidenceCount={}, eligibleCitationCount={}, citationCount={}, selectedDocIds={}, selectedTitles={}, citationScores={}, query={}",
                     groundingTrace.getChatId(),
@@ -726,7 +746,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
             eventPublisher.publishEvent(new ChatMessageEvent(this, preparedState.getChatId()));
             rememberSuccessfulTurn(preparedState.getSession().getUserId(), preparedState.getChatId(),
                     extractLastUserPrompt(preparedState.getMessages()), safeContent, assistantMessageId);
-            String output = serializeSyncResponseForIdempotency(responsePayload);
+            String output = chatSyncResponseService.serializeForIdempotency(responsePayload);
             markIdempotencyDone(gate.getRecord(), output, preparedState.getChatId(),
                     preparedState.getUserMessageId(), assistantMessageId);
             return null;
@@ -734,54 +754,7 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         return responsePayload;
     }
 
-    private Object buildSyncResponsePayload(String finalContent,
-                                            List<com.harmony.backend.modules.chat.service.support.model.RagCitation> citations,
-                                            GroundingAssessment groundingAssessment) {
-        boolean hasCitations = citations != null && !citations.isEmpty();
-        boolean hasGrounding = groundingAssessment != null;
-        if (!hasCitations && !hasGrounding) {
-            return finalContent;
-        }
-        return GroundedChatResponse.builder()
-                .content(finalContent)
-                .citations(hasCitations ? citations : List.of())
-                .grounding(groundingAssessment)
-                .build();
-    }
 
-    private String serializeSyncResponseForIdempotency(Object responsePayload) {
-        if (responsePayload instanceof String text) {
-            return text;
-        }
-        try {
-            return objectMapper.writeValueAsString(responsePayload);
-        } catch (Exception e) {
-            log.warn("Serialize sync response for idempotency failed, fallback to content only", e);
-            if (responsePayload instanceof GroundedChatResponse grounded) {
-                return grounded.getContent() == null ? "" : grounded.getContent();
-            }
-            return String.valueOf(responsePayload);
-        }
-    }
-
-    private Object decodeSyncReplayResponse(String replayResponse) {
-        if (replayResponse == null || replayResponse.isBlank()) {
-            return replayResponse;
-        }
-        String trimmed = replayResponse.trim();
-        if (!trimmed.startsWith("{")) {
-            return replayResponse;
-        }
-        try {
-            JsonNode root = objectMapper.readTree(trimmed);
-            if (root.isObject() && root.has("content")) {
-                return objectMapper.treeToValue(root, GroundedChatResponse.class);
-            }
-        } catch (Exception e) {
-            log.debug("Replay response is not structured grounded chat payload");
-        }
-        return replayResponse;
-    }
 
     private <T> T inTransaction(java.util.concurrent.Callable<T> action) {
         return transactionTemplate.execute(status -> {
@@ -945,6 +918,12 @@ public class ChatServiceImpl extends ServiceImpl<MessageMapper, Message> impleme
         return billingProperties.getMaxCompletionTokens();
     }
 }
+
+
+
+
+
+
 
 
 

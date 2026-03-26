@@ -1,5 +1,8 @@
-# Application base configuration
+﻿# Application base configuration
 spring:
+  threads:
+    virtual:
+      enabled: true
   application:
     name: backend
   config:
@@ -73,9 +76,18 @@ mybatis-plus:
 
 # Application custom configuration
 app:
+  config:
+    cache-ttl-ms: 3000
   user:
     default-token-balance: ${APP_USER_DEFAULT_TOKEN_BALANCE:50000}
+    activity:
+      async:
+        core-pool-size: 1
+        max-pool-size: 2
+        queue-capacity: 200
+        await-termination-seconds: 10
   auth:
+    user-cache-ttl-ms: 3000
     cookies:
       access-token-name: ${APP_AUTH_COOKIES_ACCESS_TOKEN_NAME:zlai_access_token}
       refresh-token-name: ${APP_AUTH_COOKIES_REFRESH_TOKEN_NAME:zlai_refresh_token}
@@ -103,6 +115,7 @@ app:
       key: ${APP_AI_OPENAI_KEY:${OPENAI_API_KEY:}}
       base-url: ${APP_AI_OPENAI_BASE_URL:${OPENAI_BASE_URL:}}
       stream-enabled: ${APP_AI_OPENAI_STREAM_ENABLED:false}
+      stream-config-cache-ttl-ms: 3000
 
 
   jwt:
@@ -125,6 +138,7 @@ app:
       default-window-seconds: 60
     context:
       window-messages: 20
+      prefetch-messages: 64
       warn-messages: 50
     stream-timeout-seconds: 90
     billing:
@@ -190,11 +204,23 @@ app:
       queue-capacity: 80
       await-termination-seconds: 30
     multiagent-timeout-seconds: 20
+    runtime:
+      max-steps-per-invocation: 8
+      max-tool-calls-per-invocation: 4
+      max-runtime-ms: 30000
+      wait-on-budget-exhausted: true
   webmvc:
     async:
       core-pool-size: 4
       max-pool-size: 8
       queue-capacity: 120
+      await-termination-seconds: 30
+  async:
+    background:
+      core-pool-size: 4
+      max-pool-size: 8
+      queue-capacity: 120
+      await-termination-seconds: 30
   tools:
     search:
       executor:
@@ -227,6 +253,11 @@ app:
     task-state-model-enabled: true
     task-state-min-refresh-seconds: 45
   rag:
+    async:
+      core-pool-size: 2
+      max-pool-size: 6
+      queue-capacity: 40
+      await-termination-seconds: 30
     ingest-filepath-enabled: false
     ingest-filepath-admin-only: true
     ingest-filepath-allowed-roots: []
@@ -328,4 +359,6 @@ management:
       enabled: false
   server:
     port: -1
+
+
 

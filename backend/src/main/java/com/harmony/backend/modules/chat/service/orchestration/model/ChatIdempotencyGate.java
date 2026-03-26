@@ -9,4 +9,5 @@ import lombok.Data;
 public class ChatIdempotencyGate {
     private ChatRequestIdempotency record;
     private String replayResponse;
+    private boolean inProgress;
 }

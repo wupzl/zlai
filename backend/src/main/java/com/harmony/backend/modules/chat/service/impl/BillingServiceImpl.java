@@ -8,9 +8,12 @@ import com.harmony.backend.common.mapper.UserMapper;
 import com.harmony.backend.modules.chat.config.BillingProperties;
 import com.harmony.backend.modules.chat.service.BillingService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class BillingServiceImpl implements BillingService {
 
@@ -27,6 +30,7 @@ public class BillingServiceImpl implements BillingService {
     }
 
     @Override
+    @Transactional
     public void recordConsumption(Long userId, String chatId, String messageId, String model,
                                   int promptTokens, int completionTokens) {
         TokenConsumption consumption = TokenConsumption.builder()
@@ -40,11 +44,17 @@ public class BillingServiceImpl implements BillingService {
         consumption.calculateTotalTokens();
         double multiplier = billingProperties.getMultiplier(model);
         int billedTokens = estimateBilledTokens(consumption.getTotalTokens(), multiplier);
+        int deducted = userMapper.deductTokenBalanceIfEnough(userId, billedTokens);
+        if (deducted <= 0) {
+            log.warn("Atomic token deduction failed: userId={}, chatId={}, messageId={}, billedTokens={}",
+                    userId, chatId, messageId, billedTokens);
+            throw new IllegalStateException("Insufficient token balance");
+        }
         tokenConsumptionMapper.insert(consumption);
-        userMapper.updateTokenBalance(userId, -billedTokens);
     }
 
     @Override
+    @Transactional
     public void recordToolConsumption(Session session, String messageId, String model,
                                       Integer promptTokens, Integer completionTokens) {
         if (session == null || session.getUserId() == null || model == null || model.isBlank()) {

@@ -12,6 +12,7 @@ import org.springframework.util.StringUtils;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -81,19 +82,28 @@ public class GlobalRateLimitSettingsServiceImpl implements GlobalRateLimitSettin
     }
 
     private GlobalRateLimitSettings loadSettings() {
-        boolean enabled = parseBoolean(appConfigService.getValue(AppConfigKeys.RATE_LIMIT_GLOBAL_ENABLED),
+        Map<String, String> values = appConfigService.getValues(List.of(
+                AppConfigKeys.RATE_LIMIT_GLOBAL_ENABLED,
+                AppConfigKeys.RATE_LIMIT_GLOBAL_ADMIN_BYPASS,
+                AppConfigKeys.RATE_LIMIT_GLOBAL_WINDOW_SECONDS,
+                AppConfigKeys.RATE_LIMIT_GLOBAL_IP_LIMIT,
+                AppConfigKeys.RATE_LIMIT_GLOBAL_USER_LIMIT,
+                AppConfigKeys.RATE_LIMIT_GLOBAL_WHITELIST_IPS,
+                AppConfigKeys.RATE_LIMIT_GLOBAL_WHITELIST_PATHS
+        ));
+        boolean enabled = parseBoolean(values.get(AppConfigKeys.RATE_LIMIT_GLOBAL_ENABLED),
                 defaults.isEnabled());
-        boolean adminBypass = parseBoolean(appConfigService.getValue(AppConfigKeys.RATE_LIMIT_GLOBAL_ADMIN_BYPASS),
+        boolean adminBypass = parseBoolean(values.get(AppConfigKeys.RATE_LIMIT_GLOBAL_ADMIN_BYPASS),
                 defaults.isAdminBypass());
-        int windowSeconds = parseInt(appConfigService.getValue(AppConfigKeys.RATE_LIMIT_GLOBAL_WINDOW_SECONDS),
+        int windowSeconds = parseInt(values.get(AppConfigKeys.RATE_LIMIT_GLOBAL_WINDOW_SECONDS),
                 defaults.getWindowSeconds());
-        int ipLimit = parseInt(appConfigService.getValue(AppConfigKeys.RATE_LIMIT_GLOBAL_IP_LIMIT),
+        int ipLimit = parseInt(values.get(AppConfigKeys.RATE_LIMIT_GLOBAL_IP_LIMIT),
                 defaults.getIpLimit());
-        int userLimit = parseInt(appConfigService.getValue(AppConfigKeys.RATE_LIMIT_GLOBAL_USER_LIMIT),
+        int userLimit = parseInt(values.get(AppConfigKeys.RATE_LIMIT_GLOBAL_USER_LIMIT),
                 defaults.getUserLimit());
-        List<String> whitelistIps = parseList(appConfigService.getValue(AppConfigKeys.RATE_LIMIT_GLOBAL_WHITELIST_IPS),
+        List<String> whitelistIps = parseList(values.get(AppConfigKeys.RATE_LIMIT_GLOBAL_WHITELIST_IPS),
                 defaults.getWhitelistIps());
-        List<String> whitelistPaths = parseList(appConfigService.getValue(AppConfigKeys.RATE_LIMIT_GLOBAL_WHITELIST_PATHS),
+        List<String> whitelistPaths = parseList(values.get(AppConfigKeys.RATE_LIMIT_GLOBAL_WHITELIST_PATHS),
                 defaults.getWhitelistPaths());
 
         return GlobalRateLimitSettings.builder()

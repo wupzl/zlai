@@ -18,19 +18,22 @@ public class RagProperties {
     private int snippetMaxTokens = 240;
     private final Search search = new Search();
     private final Grounding grounding = new Grounding();
-
     private final Datasource datasource = new Datasource();
 
     @Data
     public static class Search {
-        private String strategy = "mmr";
-        private boolean hybridEnabled = true;
+        private String strategy = "vector-rerank";
+        private boolean hybridEnabled = false;
         private double minScore = 0.2;
         private double mmrLambda = 0.7;
         private int mmrCandidateMultiplier = 4;
         private double vectorWeight = 0.65;
         private double keywordWeight = 0.35;
         private int maxChunksPerDocument = 2;
+        private int rerankCandidateMultiplier = 8;
+        private double rerankVectorWeight = 0.72;
+        private double rerankLexicalWeight = 0.28;
+        private double rerankExactMatchBonus = 0.12;
     }
 
     @Data

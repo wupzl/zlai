@@ -5,7 +5,6 @@ package com.harmony.backend.common.interceptor;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.harmony.backend.common.constant.RequestAttributeConst;
 import com.harmony.backend.common.entity.User;
-import com.harmony.backend.common.mapper.UserMapper;
 import com.harmony.backend.common.util.JwtUtil;
 import com.harmony.backend.common.util.RequestUtils;
 import com.harmony.backend.modules.user.service.UserSecurityService;
@@ -26,7 +25,6 @@ import java.util.Date;
 public class JwtAuthInterceptor implements HandlerInterceptor {
 
     private final JwtUtil jwtUtil;
-    private final UserMapper userMapper;
     private final UserSecurityService userSecurityService;
 
     @Override
@@ -73,7 +71,7 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
         }
 
         // 5) Load user
-        User user = userMapper.selectById(internalId);
+        User user = resolveCurrentUser(request, internalId);
         if (user == null || Boolean.TRUE.equals(user.getDeleted()) || !user.isNormal()) {
             sendError(response, 401, "User not found or disabled");
             return false;
@@ -97,6 +95,14 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
                 user.getId(), user.getUsername(), requestURI);
 
         return true;
+    }
+
+    private User resolveCurrentUser(HttpServletRequest request, Long internalId) {
+        Object currentUser = request.getAttribute(RequestAttributeConst.CURRENT_USER);
+        if (currentUser instanceof User cachedUser && internalId != null && internalId.equals(cachedUser.getId())) {
+            return cachedUser;
+        }
+        return userSecurityService.getCachedUser(internalId);
     }
 
     @Override

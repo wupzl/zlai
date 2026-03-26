@@ -25,6 +25,9 @@ import java.util.regex.Pattern;
 public class RagCitationService {
 
     private static final Pattern NON_WORD = Pattern.compile("[^\\p{IsAlphabetic}\\p{IsDigit}\\p{IsIdeographic}]+");
+    private static final Pattern OBSIDIAN_IMAGE = Pattern.compile("!\\[\\[[^\\]]+\\]\\]");
+    private static final Pattern MARKDOWN_IMAGE = Pattern.compile("!\\[[^\\]]*\\]\\([^\\)]+\\)");
+    private static final Pattern PASTED_IMAGE = Pattern.compile("(?im)^\\s*Pasted image[^\\r\\n]*$");
 
     private final ObjectMapper objectMapper;
     private final RagProperties ragProperties;
@@ -41,7 +44,8 @@ public class RagCitationService {
                 continue;
             }
             Map<String, Object> metadata = parseMetadata(match.getChunkMetadata());
-            double overlap = lexicalOverlap(normalizedAnswer, normalize(match.getContent()));
+            String cleanedContent = cleanEvidenceContent(match.getContent());
+            double overlap = lexicalOverlap(normalizedAnswer, normalize(cleanedContent));
             double titleOverlap = lexicalOverlap(normalizedAnswer, normalize(stringValue(metadata.get("title"))));
             double headingOverlap = lexicalOverlap(normalizedAnswer, normalize(String.join(" ", stringList(metadata.get("headings")))));
             if (overlap <= 0d && titleOverlap <= 0d && headingOverlap <= 0d) {
@@ -57,7 +61,7 @@ public class RagCitationService {
                     .title(stringValue(metadata.get("title")))
                     .sourcePath(stringValue(metadata.get("sourcePath")))
                     .headings(stringList(metadata.get("headings")))
-                    .excerpt(buildExcerpt(match.getContent()))
+                    .excerpt(buildExcerpt(cleanedContent))
                     .retrievalScore(match.getScore())
                     .citationScore(citationScore)
                     .build());
@@ -137,7 +141,20 @@ public class RagCitationService {
             return "";
         }
         String trimmed = content.trim().replaceAll("\\s+", " ");
-        return trimmed.length() > 180 ? trimmed.substring(0, 180).trim() + "..." : trimmed;
+        return trimmed.length() > 260 ? trimmed.substring(0, 260).trim() + "..." : trimmed;
+    }
+
+    private String cleanEvidenceContent(String content) {
+        if (!StringUtils.hasText(content)) {
+            return "";
+        }
+        return PASTED_IMAGE.matcher(
+                        MARKDOWN_IMAGE.matcher(
+                                OBSIDIAN_IMAGE.matcher(content).replaceAll(" ")
+                        ).replaceAll(" ")
+                ).replaceAll(" ")
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 
     private String stringValue(Object value) {

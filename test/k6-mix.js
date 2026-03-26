@@ -1,4 +1,4 @@
-import http from "k6/http";
+﻿import http from "k6/http";
 import { check, sleep } from "k6";
 import { Counter } from "k6/metrics";
 
@@ -6,6 +6,7 @@ const BASE_URL = __ENV.BASE_URL || "http://localhost:8080";
 const MODEL = __ENV.MODEL || "deepseek-chat";
 const USERS = (__ENV.USERS || "test01:123456,test02:123456,test03:123456").split(",");
 const ENABLE_STREAM = (__ENV.STREAM || "false").toLowerCase() === "true";
+const ENABLE_ASYNC_INGEST = (__ENV.ASYNC_INGEST || "true").toLowerCase() === "true";
 const rateLimitCounter = new Counter("rate_limit_429");
 const serverErrorCounter = new Counter("server_error_5xx");
 const streamSuccessCounter = new Counter("stream_success");
@@ -14,6 +15,8 @@ const messageSuccessCounter = new Counter("message_success");
 const messageFailCounter = new Counter("message_fail");
 const messageEmptyCounter = new Counter("message_empty");
 const messagePersistFailCounter = new Counter("message_persist_fail");
+const ragAsyncBusyCounter = new Counter("rag_async_busy");
+const ragAsyncAcceptedCounter = new Counter("rag_async_accepted");
 
 export const options = {
   stages: [
@@ -28,6 +31,10 @@ export const options = {
   }
 };
 
+function buildRequestId(prefix) {
+  return `${prefix}-${__VU}-${__ITER}-${Date.now()}`;
+}
+
 function login(username, password) {
   const res = http.post(
     `${BASE_URL}/api/auth/login`,
@@ -36,7 +43,10 @@ function login(username, password) {
   );
   check(res, { "login ok": r => r.status === 200 });
   const data = res.json();
-  return data?.data?.accessToken || data?.data?.token;
+  const token = data?.data?.accessToken || data?.data?.token || null;
+  const accessCookie = res.cookies?.zlai_access_token?.[0]?.value || null;
+  const refreshCookie = res.cookies?.zlai_refresh_token?.[0]?.value || null;
+  return { token, accessCookie, refreshCookie };
 }
 
 function chatFlow(headers) {
@@ -61,7 +71,7 @@ function chatFlow(headers) {
   const prompt = "Explain CAP theorem briefly.";
   const msgRes = http.post(
     `${BASE_URL}/api/chat/message`,
-    JSON.stringify({ chatId, prompt }),
+    JSON.stringify({ chatId, prompt, requestId: buildRequestId("mix-msg") }),
     { headers }
   );
   if (msgRes.status === 429) rateLimitCounter.add(1);
@@ -90,7 +100,7 @@ function chatFlow(headers) {
   if (ENABLE_STREAM) {
     const streamRes = http.post(
       `${BASE_URL}/api/chat/stream`,
-      JSON.stringify({ chatId, prompt: "Explain eventual consistency." }),
+      JSON.stringify({ chatId, prompt: "Explain eventual consistency.", requestId: buildRequestId("mix-stream") }),
       { headers, timeout: "60s", responseType: "none" }
     );
     if (streamRes.status === 429) rateLimitCounter.add(1);
@@ -117,9 +127,31 @@ function agentFlow(headers) {
 }
 
 function ragFlow(headers) {
+  if (ENABLE_ASYNC_INGEST && Math.random() < 0.35) {
+    const ingestRes = http.post(
+      `${BASE_URL}/api/rag/ingest/async`,
+      JSON.stringify({
+        title: `k6-rag-${__VU}-${__ITER}`,
+        content: `Distributed systems note turn=${__ITER}. CAP theorem, quorum, replication, leader election.`
+      }),
+      { headers: { ...headers, "Content-Type": "application/json" } }
+    );
+    if (ingestRes.status === 429) rateLimitCounter.add(1);
+    if (ingestRes.status >= 500) serverErrorCounter.add(1);
+    const accepted = ingestRes.status === 200;
+    const busy = ingestRes.status === 503;
+    check(ingestRes, { "rag async ingest bounded": () => accepted || busy });
+    if (accepted) {
+      ragAsyncAcceptedCounter.add(1);
+    } else if (busy) {
+      ragAsyncBusyCounter.add(1);
+    }
+    return;
+  }
+
   const searchRes = http.post(
     `${BASE_URL}/api/rag/query`,
-    JSON.stringify({ query: "Harmony AI 智能对话系统", topK: 3 }),
+    JSON.stringify({ query: "Harmony AI intelligent dialog system", topK: 3 }),
     { headers: { ...headers, "Content-Type": "application/json" } }
   );
   if (searchRes.status === 429) rateLimitCounter.add(1);
@@ -135,12 +167,18 @@ export function setup() {
 }
 
 export default function (data) {
-  const token = data.tokens[(__VU - 1) % data.tokens.length];
-  if (!token) {
+  const auth = data.tokens[(__VU - 1) % data.tokens.length];
+  if (!auth || (!auth.token && !auth.accessCookie)) {
     sleep(1);
     return;
   }
-  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const headers = { "Content-Type": "application/json" };
+  if (auth.token) {
+    headers.Authorization = `Bearer ${auth.token}`;
+  } else if (auth.accessCookie) {
+    headers.Cookie = `zlai_access_token=${auth.accessCookie}` +
+      (auth.refreshCookie ? `; zlai_refresh_token=${auth.refreshCookie}` : "");
+  }
 
   const route = Math.random();
   if (route < 0.5) {
@@ -165,6 +203,8 @@ export function handleSummary(data) {
   const streamFail = data.metrics.stream_fail?.values?.count || 0;
   const emptyCount = data.metrics.message_empty?.values?.count || 0;
   const persistFail = data.metrics.message_persist_fail?.values?.count || 0;
+  const ragAsyncAccepted = data.metrics.rag_async_accepted?.values?.count || 0;
+  const ragAsyncBusy = data.metrics.rag_async_busy?.values?.count || 0;
   const pass = count === 0 && serverErrors === 0 && msgFail === 0 && streamFail === 0
     && emptyCount === 0 && persistFail === 0;
   return {
@@ -174,6 +214,7 @@ export function handleSummary(data) {
       `Stream success: ${streamOk}, fail: ${streamFail}\n` +
       `Empty message responses: ${emptyCount}\n` +
       `Message not persisted: ${persistFail}\n` +
-      `Result: ${pass ? "PASS" : "FAIL"}\n`
+      `RAG async accepted: ${ragAsyncAccepted}, busy: ${ragAsyncBusy}\n` +
+      `Result: ${pass ? "PASS" : "FAIL"}\n`;
   };
 }

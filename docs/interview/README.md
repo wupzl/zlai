@@ -1,48 +1,25 @@
-﻿# Interview Docs Guide
+# zlAI-v2 面试与深度解析目录
 
-这个子目录专门放面试和复习用文档，不放系统接口说明和历史变更日志。
+本目录收录的是和当前实现对齐的复习材料，重点覆盖 RAG、Agent Runtime、Multi-Agent 协作三条主线。
 
-## 1. 推荐先看
+## 核心材料
 
-### 1.1 临场速背
-- [tencent_fullstack_interview_quick.md](/D:/Code/zlAI-v2/docs/interview/tencent_fullstack_interview_quick.md)
+- [RAG 深度解析与面试指南](/docs/interview/rag_deep_dive.md)
+  重点：结构化入库、动态候选召回、混合重排、whole-document summary。
+- [Agent 深度解析与面试指南](/docs/interview/agent_deep_dive.md)
+  重点：有状态运行、预算门控、等待/恢复、取消与 no-progress guard。
+- [Multi-Agent 深度解析与面试指南](/docs/interview/multi_agent_deep_dive.md)
+  重点：规则优先 + LLM 辅助规划、顺序/并行执行、专家结果汇总。
+- [RAG + Agent 总复习稿](/docs/interview/MASTER_RAG_AGENT_GUIDE.md)
+  适合快速串讲。
 
-### 1.2 完整问答
-- [tencent_fullstack_interview_qa.md](/D:/Code/zlAI-v2/docs/interview/tencent_fullstack_interview_qa.md)
+## 建议阅读顺序
 
-### 1.3 RAG / Skill / Agent 总稿
-- [rag_interview_master.md](/D:/Code/zlAI-v2/docs/interview/rag_interview_master.md)
+1. 先看 `rag_deep_dive.md`，建立“检索不是纯向量召回”的心智模型。
+2. 再看 `agent_deep_dive.md`，理解运行时为何要 checkpoint、WAITING、RESUMED。
+3. 最后看 `multi_agent_deep_dive.md`，把规划、专家执行和 synthesis 串起来。
 
-## 2. 主题专项
+## 注意
 
-- [agent_memory_vs_autonomous_agent.md](/D:/Code/zlAI-v2/docs/interview/agent_memory_vs_autonomous_agent.md)
-  当前 agent 到底有没有记忆、为什么还不是自主长程 agent。
-
-- [memory_fields_update_strategy.md](/D:/Code/zlAI-v2/docs/interview/memory_fields_update_strategy.md)
-  `conversation_summary`、`user_memory`、`task_state` 的真实更新策略。
-
-- [rag_eval_interview_points.md](/D:/Code/zlAI-v2/docs/interview/rag_eval_interview_points.md)
-  RAG 评测相关追问。
-
-- [rag_eval_standard_and_dataset.md](/D:/Code/zlAI-v2/docs/interview/rag_eval_standard_and_dataset.md)
-  评测标准、评测集生成方式、指标和通过条件速记版。
-
-- [mcp_interview_notes.md](/D:/Code/zlAI-v2/docs/interview/mcp_interview_notes.md)
-  MCP / tool / skill 编排类问答。
-
-## 3. 阅读顺序
-
-如果只有 10 分钟：
-
-1. [tencent_fullstack_interview_quick.md](/D:/Code/zlAI-v2/docs/interview/tencent_fullstack_interview_quick.md)
-2. [agent_memory_vs_autonomous_agent.md](/D:/Code/zlAI-v2/docs/interview/agent_memory_vs_autonomous_agent.md)
-3. [rag_interview_master.md](/D:/Code/zlAI-v2/docs/interview/rag_interview_master.md)
-
-如果有 30 分钟：
-
-1. [tencent_fullstack_interview_qa.md](/D:/Code/zlAI-v2/docs/interview/tencent_fullstack_interview_qa.md)
-2. [rag_interview_master.md](/D:/Code/zlAI-v2/docs/interview/rag_interview_master.md)
-3. [rag_eval_standard_and_dataset.md](/D:/Code/zlAI-v2/docs/interview/rag_eval_standard_and_dataset.md)
-4. [rag_eval_interview_points.md](/D:/Code/zlAI-v2/docs/interview/rag_eval_interview_points.md)
-5. [memory_fields_update_strategy.md](/D:/Code/zlAI-v2/docs/interview/memory_fields_update_strategy.md)
-6. [mcp_interview_notes.md](/D:/Code/zlAI-v2/docs/interview/mcp_interview_notes.md)
+- 这些文档描述的是当前仓库已落地实现。
+- 若文档和代码细节有差异，以源码中的类、方法和测试为准。

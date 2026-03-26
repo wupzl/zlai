@@ -155,11 +155,6 @@ export default {
     }
     window.removeEventListener("click", this.closeSessionMenu);
   },
-  watch: {
-    "$route.fullPath"() {
-      this.loadRecent(true);
-    }
-  },
   methods: {
     async loadRecent(reset = false) {
       try {

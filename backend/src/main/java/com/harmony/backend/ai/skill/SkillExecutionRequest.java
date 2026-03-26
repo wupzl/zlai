@@ -11,4 +11,10 @@ public class SkillExecutionRequest {
     private String skillKey;
     private String input;
     private String modelOverride;
+    private String executionId;
+    private String stepKey;
+
+    public SkillExecutionRequest(String skillKey, String input, String modelOverride) {
+        this(skillKey, input, modelOverride, null, null);
+    }
 }

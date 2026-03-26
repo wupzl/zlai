@@ -93,3 +93,44 @@ frontend/coverage/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Repository-private governance/docs/review materials
+AGENTS.md
+/.specify/
+/docs/
+/specs/
+
+# Repository-private test and local validation assets
+/test/
+/backend/src/test/
+/frontend/src/**/*.test.js
+/frontend/src/**/*.test.ts
+/frontend/src/**/*.spec.js
+/frontend/src/**/*.spec.ts
+
+# Additional sensitive env patterns
+.env.*
+backend/.env.*
+
+# Keys and certificates
+*.pem
+*.key
+*.p12
+*.jks
+*.crt
+*.cer
+
+# Local database files
+*.sqlite
+*.db
+
+# Coverage and report artifacts
+/coverage/
+*.lcov
+*.coverage
+
+# Optional local backend config variants
+backend/src/main/resources/application-local.yml
+backend/src/main/resources/application-local.yaml
+backend/src/main/resources/application-dev-local.yml
+backend/src/main/resources/application-dev-local.yaml

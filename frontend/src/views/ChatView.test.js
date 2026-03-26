@@ -9,6 +9,7 @@ vi.mock("../api", () => ({
 describe("ChatView sync payload compatibility", () => {
   beforeEach(() => {
     apiRequest.mockReset();
+    window.localStorage.clear();
   });
 
   it("keeps rag route context when creating a new session", async () => {

@@ -2,6 +2,8 @@ package com.harmony.backend.ai.agent.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.harmony.backend.ai.agent.controller.request.AgentUpsertRequest;
+import com.harmony.backend.ai.agent.controller.response.AgentRunTraceVO;
+import com.harmony.backend.ai.agent.controller.response.AgentRunStatusVO;
 import com.harmony.backend.ai.agent.controller.response.AgentVO;
 import com.harmony.backend.common.entity.Agent;
 import com.harmony.backend.common.response.PageResult;
@@ -24,4 +26,10 @@ public interface AgentService extends IService<Agent> {
     AgentVO update(String agentId, Long userId, boolean isAdmin, AgentUpsertRequest request);
 
     boolean delete(String agentId, Long userId, boolean isAdmin);
+
+    AgentRunStatusVO getRunStatus(String executionId, Long userId, boolean isAdmin);
+
+    AgentRunStatusVO cancelRun(String executionId, Long userId, boolean isAdmin);
+
+    AgentRunTraceVO getRunTrace(String executionId, Long userId, boolean isAdmin);
 }

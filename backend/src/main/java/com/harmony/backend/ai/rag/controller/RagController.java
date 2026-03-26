@@ -8,6 +8,7 @@ import com.harmony.backend.ai.rag.controller.response.RagIngestResponse;
 import com.harmony.backend.ai.rag.controller.response.RagQueryResponse;
 import com.harmony.backend.ai.rag.model.RagChunkMatch;
 import com.harmony.backend.ai.rag.model.RagDocumentSummary;
+import com.harmony.backend.ai.rag.model.RagEvidenceResult;
 import com.harmony.backend.ai.rag.config.RagOcrProperties;
 import com.harmony.backend.ai.rag.model.OcrSettings;
 import com.harmony.backend.ai.rag.service.OcrSettingsService;
@@ -62,6 +63,8 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -83,8 +86,8 @@ public class RagController {
     private final RagAsyncService ragAsyncService;
     private final RagOcrOptimizer ragOcrOptimizer;
     private final RagIngestFilepathProperties ragIngestFilepathProperties;
-    @Qualifier("taskExecutor")
-    private final Executor taskExecutor;
+    @Qualifier("ragTaskExecutor")
+    private final Executor ragTaskExecutor;
     @Value("${app.rag.remote-images.max-count:20}")
     private int remoteImageMaxCount;
     @Value("${app.rag.remote-images.max-bytes:5242880}")
@@ -249,7 +252,7 @@ public class RagController {
             }
             updateTaskStatus(taskId, userId, "pending", 0, "Queued", null, title);
             updateTaskStatus(taskId, userId, "running", 15, "Preparing markdown assets", null, title);
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            submitRagTask(() -> {
                 try {
                     MarkdownUploadPayload payload = prepareMarkdownUploadPayload(
                             userId,
@@ -266,7 +269,7 @@ public class RagController {
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
-            }, taskExecutor).whenComplete((result, throwable) -> {
+            }).whenComplete((result, throwable) -> {
                 Throwable cause = throwable instanceof java.util.concurrent.CompletionException && throwable.getCause() != null
                         ? throwable.getCause()
                         : throwable;
@@ -484,7 +487,7 @@ public class RagController {
             }
             updateTaskStatus(taskId, userId, "pending", 0, "Queued", null, title);
             updateTaskStatus(taskId, userId, "running", 20, "Extracting text", null, title);
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            submitRagTask(() -> {
                 try {
                     String text = extractTextWithEmbeddedOcr(fileBytes, filename, contentType, ocrSettings, isAdmin);
                     if (text == null || text.isBlank()) {
@@ -495,7 +498,7 @@ public class RagController {
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
-            }, taskExecutor).thenCompose(text -> ragAsyncService.ingest(userId, title, text))
+            }).thenCompose(text -> ragAsyncService.ingest(userId, title, text))
                     .whenComplete((docId, throwable) -> {
                         Throwable cause = throwable instanceof java.util.concurrent.CompletionException && throwable.getCause() != null
                                 ? throwable.getCause()
@@ -1028,9 +1031,8 @@ public class RagController {
             return ragDatasourceUnavailable();
         }
         try {
-            List<RagChunkMatch> matches = ragService.search(userId, request.getQuery(), request.getTopK());
-            String context = ragService.buildContext(userId, request.getQuery(), request.getTopK());
-            return ApiResponse.success(new RagQueryResponse(context, matches));
+            RagEvidenceResult evidence = ragService.resolveEvidence(userId, request.getQuery(), request.getTopK());
+            return ApiResponse.success(new RagQueryResponse(evidence.context(), evidence.matches()));
         } catch (BusinessException e) {
             return ApiResponse.error(e.getCode(), e.getMessage());
         } catch (Exception e) {
@@ -1100,6 +1102,22 @@ public class RagController {
     @SuppressWarnings("unchecked")
     private <T> ApiResponse<T> ragDatasourceUnavailable() {
         return (ApiResponse<T>) ApiResponse.error(503, "RAG datasource not configured");
+    }
+
+    private <T> java.util.concurrent.CompletableFuture<T> submitRagTask(Supplier<T> supplier) {
+        java.util.concurrent.CompletableFuture<T> future = new java.util.concurrent.CompletableFuture<>();
+        try {
+            ragTaskExecutor.execute(() -> {
+                try {
+                    future.complete(supplier.get());
+                } catch (Throwable error) {
+                    future.completeExceptionally(error);
+                }
+            });
+        } catch (RejectedExecutionException ex) {
+            future.completeExceptionally(new BusinessException(503, "RAG async executor is busy"));
+        }
+        return future;
     }
 
 }

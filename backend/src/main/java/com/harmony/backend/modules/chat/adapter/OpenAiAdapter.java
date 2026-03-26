@@ -16,7 +16,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import org.springframework.web.reactive.function.client.ClientResponse;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import java.util.HashMap;
 import java.util.List;
@@ -41,9 +43,14 @@ public class OpenAiAdapter extends AbstractOpenAiCompatibleAdapter {
     @Value("${app.ai.openai.stream-enabled:true}")
     private boolean streamEnabled;
 
+    @Value("${app.ai.openai.stream-config-cache-ttl-ms:3000}")
+    private long streamConfigCacheTtlMs;
+
     private final AppConfigService appConfigService;
     private final SystemLogMapper systemLogMapper;
     private final AtomicInteger streamLogCounter = new AtomicInteger(0);
+    private final AtomicReference<Boolean> cachedAdminStreamEnabled = new AtomicReference<>();
+    private final AtomicLong cachedAdminStreamLoadedAt = new AtomicLong(0);
 
     public OpenAiAdapter(WebClient.Builder webClientBuilder,
                          ObjectMapper objectMapper,
@@ -177,10 +184,9 @@ public class OpenAiAdapter extends AbstractOpenAiCompatibleAdapter {
         if (!streamEnabled) {
             return false;
         }
-        String adminSetting = appConfigService.getValue(AppConfigKeys.OPENAI_STREAM_ENABLED);
+        Boolean adminSetting = resolveAdminStreamSetting();
         if (adminSetting != null) {
-            boolean enabled = Boolean.parseBoolean(adminSetting);
-            return enabled;
+            return adminSetting;
         }
         String base = resolveBaseUrl();
         if (base == null) {
@@ -188,6 +194,24 @@ public class OpenAiAdapter extends AbstractOpenAiCompatibleAdapter {
         }
         String normalized = base.toLowerCase();
         return !normalized.contains("gptsapi");
+    }
+
+    private Boolean resolveAdminStreamSetting() {
+        long now = System.currentTimeMillis();
+        Boolean cachedValue = cachedAdminStreamEnabled.get();
+        long loadedAt = cachedAdminStreamLoadedAt.get();
+        if (cachedValue != null && now - loadedAt < streamConfigCacheTtlMs) {
+            return cachedValue;
+        }
+        String adminSetting = appConfigService.getValue(AppConfigKeys.OPENAI_STREAM_ENABLED);
+        cachedAdminStreamLoadedAt.set(now);
+        if (adminSetting == null) {
+            cachedAdminStreamEnabled.set(null);
+            return null;
+        }
+        Boolean resolved = Boolean.parseBoolean(adminSetting);
+        cachedAdminStreamEnabled.set(resolved);
+        return resolved;
     }
 
     private void recordStreamFallback() {

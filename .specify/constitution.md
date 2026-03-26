@@ -1,90 +1,206 @@
-﻿# zlAI Specify Constitution
+# zlAI Specify Constitution
 
-## Core Principles
+## 1. Purpose
 
-### I. Core User Chain Stability First
-Any change MUST protect the platform's core user chains before adding new capability. This includes auth, chat, GPT, agent, RAG, admin, billing, and any skill dispatch path. A feature that adds power but destabilizes streaming chat, message persistence, authorization, billing, or admin traceability is incomplete.
+This constitution defines the repository's project law: the non-negotiable engineering principles, risk tiers, and governance rules that override local convenience.
 
-Constraints:
-- Any change touching chat, agent orchestration, RAG ingest/query, billing, auth, admin APIs, or skill dispatch MUST explicitly identify the affected user chain first.
-- API contracts, database schema, and default configuration MUST remain backward compatible unless a migration plan is documented.
-- Breaking changes MUST include migration notes, fallback switches, or compatibility handling.
+It is intentionally short. It answers:
+- what must be protected
+- what must be explicitly reasoned about
+- what level of verification is required
+- when exceptions are allowed
 
-### II. Module Boundaries Before Shortcuts
-The system MUST evolve through stable module boundaries, not cross-layer shortcuts. Backend code should preserve controller, service, adapter, repository/mapper, and support responsibilities. Frontend code should keep API access, view logic, and reusable components separated. Skill-layer code MUST not leak provider-specific or prompt-specific logic across unrelated modules.
+Execution workflow, checklists, and directory-specific operating rules belong in `AGENTS.md`, not here.
 
-Constraints:
-- New backend business logic belongs in service/support, not controller glue.
-- Model-provider logic MUST stay behind adapters.
+## 2. Rule Levels
+
+This repository uses three rule levels:
+- `MUST`: mandatory. Violations block the change unless an exception is recorded.
+- `SHOULD`: default expectation. Deviations must be explained.
+- `MAY`: optional guidance when useful.
+
+## 3. Scope And Change Tiers
+
+### 3.1 Scope
+
+This constitution applies to the whole repository.
+
+More local `AGENTS.md` files may tighten execution rules, but they must not weaken any `MUST` in this constitution.
+
+### 3.2 Change Tiers
+
+Use the smallest tier that honestly matches the change.
+
+#### Tier 0: Trivial Change
+
+Examples:
+- typo, comment, formatting-only fix
+- dead-link fix
+- rename with no behavior change
+- wording-only doc update
+
+Tier 0 changes:
+- MAY skip full solution-option analysis
+- SHOULD still avoid hidden behavior changes
+- SHOULD state briefly why the change is trivial when there is any doubt
+
+#### Tier 1: Standard Change
+
+Examples:
+- ordinary feature work
+- local refactor with behavior changes contained inside one module
+- non-trivial docs/spec updates tied to implemented behavior
+
+Tier 1 changes:
+- MUST identify affected user chain and module boundary
+- MUST compare 2 to 4 realistic options before implementation
+- MUST define a verification plan matching risk
+
+#### Tier 2: High-Risk Change
+
+Examples:
+- auth, billing, chat sync/stream, admin, RAG ingest/query, agent runtime, skill dispatch
+- concurrency, idempotency, rate limiting, queues, retries, persistence semantics
+- schema, contract, config, or operational behavior changes
+
+Tier 2 changes:
+- MUST satisfy all Tier 1 requirements
+- MUST explain concurrency, capacity, and degraded behavior
+- MUST validate failure paths, not only happy paths
+- MUST record compatibility or rollback handling when applicable
+
+## 4. Non-Negotiable Principles
+
+### I. Core User Chains First
+
+The platform's core user chains MUST remain stable before new capability is added.
+
+This includes:
+- auth
+- chat sync and stream
+- billing and quota
+- RAG ingest and query
+- admin and audit paths
+- agent and skill execution flows
+
+Requirements:
+- Changes touching a core chain MUST explicitly name the affected chain first.
+- Backward compatibility for API, schema, and default config MUST be preserved unless migration handling is documented.
+- Hidden regressions in correctness, auditability, or operator control are not acceptable tradeoffs for speed.
+
+### II. Options Before Commitment
+
+For non-trivial changes, implementation MUST follow explicit option analysis before code changes begin.
+
+Requirements:
+- The option set MUST contain 2 to 4 realistic approaches.
+- The comparison MUST cover:
+  - correctness and robustness
+  - maintainability
+  - extensibility
+  - concurrency and performance impact
+  - implementation complexity
+  - rollback or compatibility risk
+- The chosen option MUST explain why it is the best fit for this repository now.
+
+### III. Stable Boundaries Over Shortcuts
+
+The codebase MUST evolve through explicit boundaries, not cross-layer shortcuts.
+
+Requirements:
+- Backend business logic MUST live in service/support layers, not controller glue.
+- Provider-specific logic MUST stay behind adapters.
 - Chat, Agent, Tool, Skill, RAG, User, and Admin responsibilities MUST remain separable and testable.
-- Skill registry, routing, execution, and fallback MUST be modeled as distinct concerns.
+- Skill registry, routing, execution, and fallback MUST remain distinct concerns.
 
-### III. Skill Contracts Before Skill Execution
-Skill-layer changes MUST be contract-first. Before implementation, each skill capability MUST define its type, trigger mode, input/output schema, dependency boundary, authorization scope, side effects, and fallback behavior. Skill execution without a clear contract is not acceptable.
+### IV. Concurrency, Capacity, And Degradation Safety
 
-Constraints:
-- Every skill-oriented feature MUST define `Skill Type`, `Trigger Model`, `Execution Contract`, and `Fallback Strategy` in its spec.
-- Skill execution MUST not silently bypass auth, quota, tenant isolation, or audit rules.
-- Built-in skills, user skills, workflow skills, and tool-wrapper skills MUST be distinguishable in design and runtime handling.
+Hot paths and shared state MUST be designed for real load, not only single-request correctness.
 
-### IV. Observability and Governance by Default
-zlAI is a platform, not a one-off demo. New features MUST be observable, traceable, and governable. Skill-layer behavior MUST expose enough information for debugging, audit, and runtime control.
+Requirements:
+- Shared mutable state MUST prefer atomic database/Redis operations, idempotency controls, or explicitly bounded locking/versioning.
+- Queues, thread pools, retry logic, buffering, and timeouts MUST be bounded and justified.
+- Failure handling MUST cover timeout, overload, dependency failure, duplicate/replay risk, and safe fallback or fast-fail behavior.
+- High-traffic paths SHOULD avoid unnecessary scans, repeated lookups, and duplicate expensive work when safe reuse is available.
 
-Constraints:
-- Long-running or async tasks MUST expose status, error result, or traceable logs.
-- Admin-relevant actions MUST retain auditability.
-- Skill dispatch MUST record why a skill matched, what it consumed, what it produced, and why it failed or fell back.
-- Production behavior MUST be controlled through configuration, not hardcoded constants hidden inside logic.
+### V. Verification Must Match Risk
 
-### V. Testing Must Cover Risk, Not Just Happy Paths
-Testing is part of the change, not optional decoration. Coverage depth MUST match risk. This project includes auth, quota, rate limiting, streaming output, multi-model routing, document ingest, retrieval, and skill orchestration. High-risk changes cannot rely only on manual verification.
+Testing and verification are part of the change, not follow-up decoration.
 
-Constraints:
-- Backend changes involving API, auth, orchestration, skill routing, or RAG behavior SHOULD add or update JUnit coverage where practical.
-- Frontend changes involving routing, API wrappers, or key user interactions SHOULD add or update Vitest coverage where practical.
-- High-risk changes MUST validate failure paths, including unauthorized access, quota exhaustion, timeout, provider failure, empty retrieval, skill conflict, and fallback execution.
-- If automation is not added, the plan MUST state why and define manual verification steps.
+Requirements:
+- High-risk changes MUST validate representative failure or rejection paths, not only successful execution.
+- Changes touching concurrency, idempotency, billing, auth, rate limiting, async execution, RAG, or agent runtime MUST include targeted regression coverage where practical.
+- If automation is not added, the change MUST record why and what was manually verified.
 
-### VI. Grounded RAG Responses Before Confident Claims
-RAG-generated answers MUST prefer grounded claims over fluent but unsupported claims. When the system answers from retrieved knowledge, it SHOULD expose attributable evidence, avoid fabricated citations, and degrade gracefully when grounding is weak.
+### VI. Grounded RAG And Governed Agent Behavior
 
-Constraints:
-- RAG answer-generation changes MUST define how citations are produced, attached, and rendered, or explicitly justify why citations are unavailable.
-- Grounding or hallucination-mitigation logic MUST not fabricate source titles, section names, or document identifiers that were not present in the retrieved evidence.
-- When retrieval evidence is weak, conflicting, or empty, the user-facing path MUST prefer uncertainty, partial answer, or safe fallback over high-confidence unsupported output.
-- Grounding score, citation metadata, and fallback reasons SHOULD be observable in logs, response metadata, or admin-visible diagnostics.
+RAG and Agent features are first-class product behavior and MUST be governable.
 
-## Engineering Constraints
+RAG requirements:
+- RAG answer-generation changes MUST define how grounding, citations, or evidence references are attached, or justify why they are unavailable.
+- When retrieval evidence is weak, conflicting, or empty, the user-facing path MUST prefer uncertainty or safe fallback over unsupported confidence.
+- Source metadata and fallback reasons SHOULD remain observable.
 
-- Primary stack remains:
-  - Frontend: Vue 3, Vue Router, Vite, Vitest
-  - Backend: Java 21, Spring Boot 3.5, Spring Security, WebFlux, MyBatis-Plus
-  - Data: MySQL, Redis, PostgreSQL + pgvector
-- Repository structure defaults to: `frontend/`, `backend/`, `docs/`, `test/`, `.specify/`, `specs/`
-- API changes MUST update the corresponding API documentation.
-- Database or seed changes MUST be delivered through explicit SQL or managed schema changes.
-- RAG changes MUST preserve UTF-8 safety, chunking/vector compatibility, ingest traceability, and evidence traceability.
-- Skill-layer changes MUST document registry shape, routing strategy, execution trace, and fallback behavior.
+Agent requirements:
+- Agent-runtime changes MUST define lifecycle states, bounded autonomy, stop conditions, and recovery/resume behavior.
+- Long-running agent execution MUST separate planning, state persistence, execution, observation, tool/skill invocation, and synthesis into explicit responsibilities.
+- Agent memory and intermediate artifacts MUST not be treated as unbounded append-only prompt history.
 
-## Delivery Workflow
+## 5. Domain-Specific Required Checks
 
-1. Define the affected user chain and module boundary before implementation.
-2. Run a constitution check during planning:
-   - Does this protect the core user chain?
-   - Does it preserve module boundaries?
-   - Does it define a skill contract when skill-layer logic is involved?
-   - Does it include observability and governance?
-   - Does test depth match risk?
-3. Prefer the smallest end-to-end increment that delivers real value.
-4. Validate targeted behavior first, then run affected regression checks.
-5. Any schema, config, contract, or runtime-operational change MUST be written into the feature docs.
+These checks apply only when the domain is involved.
 
-## Governance
+### 5.1 Skill-Layer Changes
 
-- This constitution overrides local convenience and temporary shortcuts.
-- Plans generated from `.specify/templates/plan-template.md` MUST contain an explicit Constitution Check.
-- Exceptions MUST be recorded in `Complexity Tracking` with justification and rejected simpler alternatives.
-- Constitution updates MUST edit this file directly and record why the amendment was necessary.
-- Reviews SHOULD reject hidden coupling, untraceable behavior, high-risk changes without verification, ungoverned skill execution, or confident RAG output without grounded evidence handling.
+Skill-oriented changes MUST define:
+- skill type
+- trigger model
+- execution contract
+- authorization scope
+- side effects
+- fallback strategy
 
-**Version**: 1.2.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-03-19
+### 5.2 RAG Changes
+
+RAG changes MUST preserve:
+- UTF-8 safety
+- chunking/vector compatibility
+- ingest traceability
+- evidence traceability
+
+### 5.3 Agent Runtime Changes
+
+Agent-runtime changes MUST document:
+- lifecycle model
+- persisted state shape
+- bounded autonomy controls
+- cancellation/resume strategy
+- operator-visible trace or diagnostics
+
+## 6. Exceptions And Governance
+
+### 6.1 Exception Rule
+
+Exceptions are allowed only when the change owner records:
+- what rule is being bent
+- why the normal path is not practical now
+- the risk being accepted
+- the exit criteria or follow-up condition
+
+### 6.2 Review Rule
+
+Reviews SHOULD reject changes that introduce:
+- hidden coupling
+- skipped option analysis for non-trivial work
+- race-prone shared-state updates
+- unbounded resource behavior
+- high-risk behavior with weak verification
+- ungoverned skill execution
+- agent flows presented as autonomous runtime without lifecycle and bounded autonomy
+- confident RAG behavior without grounded evidence handling
+
+### 6.3 Amendment Rule
+
+Constitution updates MUST edit this file directly and briefly record why the amendment was necessary.
+
+**Version**: 2.0.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-03-26

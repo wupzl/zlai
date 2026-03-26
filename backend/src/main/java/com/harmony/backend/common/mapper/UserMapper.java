@@ -30,6 +30,16 @@ public interface UserMapper extends BaseMapper<User> {
     @Update("UPDATE account SET token_balance = token_balance + #{delta} WHERE id = #{id}")
     int updateTokenBalance(@Param("id") Long id, @Param("delta") long delta);
 
+    @Update("""
+            UPDATE account
+            SET token_balance = token_balance - #{required}
+            WHERE id = #{id}
+              AND is_deleted = 0
+              AND token_balance IS NOT NULL
+              AND token_balance >= #{required}
+            """)
+    int deductTokenBalanceIfEnough(@Param("id") Long id, @Param("required") long required);
+
     @Update("UPDATE account SET ocr_balance = COALESCE(ocr_balance, #{defaultQuota}) + #{delta} WHERE id = #{id}")
     int updateOcrBalance(@Param("id") Long id, @Param("delta") int delta, @Param("defaultQuota") int defaultQuota);
 

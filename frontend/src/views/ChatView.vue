@@ -63,6 +63,7 @@ import { streamChat } from "../utils/sse";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ChatMessageList from "../components/chat/ChatMessageList.vue";
 import ChatSessionSettings from "../components/chat/ChatSessionSettings.vue";
+import { loadChatSessionPreferences, saveChatSessionPreferences } from "../utils/chatSessionPrefs";
 import {
   buildChildMap,
   initBranchSelections,
@@ -80,6 +81,7 @@ export default {
     ChatSessionSettings
   },
   data() {
+    const prefs = loadChatSessionPreferences();
     return {
       sessions: [],
       activeChatId: "",
@@ -90,17 +92,17 @@ export default {
       selectedBranchMap: {},
       modelOptions: [],
       modelRates: {},
-      selectedModel: "deepseek-chat",
-      selectedToolModel: "",
+      selectedModel: prefs.selectedModel,
+      selectedToolModel: prefs.selectedToolModel,
       editingMessageId: "",
       editedContent: "",
-      lastValidModel: "deepseek-chat",
+      lastValidModel: prefs.selectedModel,
       activeStream: null,
       activeStreamingMessageId: "",
       pendingGptId: "",
       pendingAgentId: "",
       isStreaming: false,
-      useStreaming: true,
+      useStreaming: prefs.useStreaming,
       ragEnabled: false,
       pendingRag: false
     };
@@ -124,6 +126,7 @@ export default {
     selectedModel(newVal, oldVal) {
       if (!this.activeChatId) {
         this.lastValidModel = newVal;
+        this.persistSessionPreferences();
         return;
       }
       if (this.hasImageMessages()) {
@@ -132,6 +135,13 @@ export default {
         return;
       }
       this.lastValidModel = newVal;
+      this.persistSessionPreferences();
+    },
+    selectedToolModel() {
+      this.persistSessionPreferences();
+    },
+    useStreaming() {
+      this.persistSessionPreferences();
     },
     "$route.params.chatId": function (val) {
       if (val) {
@@ -194,9 +204,6 @@ export default {
       const data = await apiRequest("/api/chat/sessions?page=1&size=10");
       this.sessions = Array.isArray(data) ? data : (data?.content || []);
       window.dispatchEvent(new Event("sessions-updated"));
-      if (!this.activeChatId && !this.pendingGptId && !this.pendingAgentId && !this.pendingRag && this.sessions.length > 0) {
-        this.selectSession(this.sessions[0].chatId);
-      }
     },
     async loadOptions() {
       try {
@@ -237,6 +244,13 @@ export default {
       const shown = Number(info.multiplier).toFixed(2).replace(/\.00$/, "");
       const stamp = info.updatedAt ? `, ${String(info.updatedAt).slice(0, 10)}` : "";
       return `${model} (x${shown}${stamp})`;
+    },
+    persistSessionPreferences() {
+      saveChatSessionPreferences({
+        selectedModel: this.selectedModel,
+        selectedToolModel: this.selectedToolModel,
+        useStreaming: this.useStreaming
+      });
     },
     async selectSession(chatId) {
       this.activeChatId = chatId;
@@ -283,6 +297,7 @@ export default {
     },
     createSession() {
       const keepRagContext = this.$route.path.startsWith("/app/rag/chat") || this.pendingRag || this.ragEnabled;
+      const prefs = loadChatSessionPreferences();
       this.activeChatId = "";
       this.messages = [];
       this.activeMessageId = "";
@@ -290,6 +305,10 @@ export default {
       this.selectedBranchMap = {};
       this.editingMessageId = "";
       this.editedContent = "";
+      this.selectedModel = prefs.selectedModel;
+      this.selectedToolModel = prefs.selectedToolModel;
+      this.useStreaming = prefs.useStreaming;
+      this.lastValidModel = prefs.selectedModel;
       this.ragEnabled = false;
       this.pendingRag = keepRagContext;
       this.syncRouteWithSession();

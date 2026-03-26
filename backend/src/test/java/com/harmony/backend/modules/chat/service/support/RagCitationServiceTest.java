@@ -122,4 +122,29 @@ class RagCitationServiceTest {
 
         assertThat(citations).hasSize(2);
     }
+
+    @Test
+    void deriveCitations_cleansImageNoiseFromExcerpt() {
+        ResolvedRagEvidence ragEvidence = ResolvedRagEvidence.enabled(
+                "介绍一下流",
+                "Context",
+                List.of(
+                        new RagChunkMatch(
+                                "doc-1",
+                                "[Section] 流\n![[Pasted image 1.png]] 流用于处理数据序列，支持过滤、映射、归约。 ![[Pasted image 2.png]]",
+                                0.88,
+                                "{\"title\":\"Java基础.md\",\"sourcePath\":\"notes/Java基础.md\",\"headings\":[\"流\"]}"
+                        )
+                )
+        );
+
+        List<RagCitation> citations = service.deriveCitations(
+                "流用于处理数据序列，支持过滤映射和归约。",
+                ragEvidence
+        );
+
+        assertThat(citations).hasSize(1);
+        assertThat(citations.get(0).getExcerpt()).doesNotContain("Pasted image");
+        assertThat(citations.get(0).getExcerpt()).contains("流用于处理数据序列");
+    }
 }

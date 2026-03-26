@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.harmony.backend.common.config.AppCorsProperties;
 import com.harmony.backend.common.constant.RequestAttributeConst;
 import com.harmony.backend.common.entity.User;
+import com.harmony.backend.common.exception.BusinessException;
 import com.harmony.backend.common.filter.GlobalRateLimitFilter;
 import com.harmony.backend.common.filter.JwtAuthenticationFilter;
 import com.harmony.backend.modules.chat.config.BillingProperties;
@@ -37,11 +38,15 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.test.web.servlet.MockMvc;
+import reactor.core.publisher.Flux;
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -69,6 +74,8 @@ class ChatControllerTest {
     private MockMvc mockMvc;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private ChatController chatController;
 
     @MockBean
     private SessionService sessionService;
@@ -216,6 +223,39 @@ class ChatControllerTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"grounding\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"status\":\"grounded\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"citations\"")));
+    }
+
+    @Test
+    void sendMessage_surfacesDuplicateInFlightConflict() throws Exception {
+        when(chatService.sendMessage(eq(1L), isNull(), eq("Explain CAP theorem"), isNull(), isNull(), eq("req-dup"),
+                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull()))
+                .thenThrow(new BusinessException(409, "requestId is already being processed"));
+
+        mockMvc.perform(post("/api/chat/message")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer token")
+                        .requestAttr(RequestAttributeConst.CURRENT_USER, CURRENT_USER)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "prompt", "Explain CAP theorem",
+                                "requestId", "req-dup"
+                        ))))
+                .andExpect(status().isConflict())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("already being processed")));
+    }
+
+    @Test
+    void streamFallback_returnsBusyEvent() {
+        Flux<ServerSentEvent<String>> result = chatController.streamFallback(
+                new org.springframework.mock.web.MockHttpServletRequest(),
+                new com.harmony.backend.modules.chat.controller.request.ChatRequest(),
+                new RuntimeException("timeout"));
+
+        List<ServerSentEvent<String>> events = result.collectList().block();
+
+        assertThat(events).isNotNull();
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).event()).isEqualTo("error");
+        assertThat(events.get(0).data()).contains("System busy, please retry later");
     }
 
     @Test

@@ -107,10 +107,12 @@
 <script>
 import { apiRequest, authFetch } from "../api";
 import JSZip from "jszip";
+import { loadChatSessionPreferences, saveChatSessionPreferences } from "../utils/chatSessionPrefs";
 
 export default {
   name: "RagView",
   data() {
+    const prefs = loadChatSessionPreferences();
     return {
       doc: { title: "", content: "" },
       docs: [],
@@ -121,8 +123,8 @@ export default {
       loadingDocs: false,
       modelOptions: [],
       modelRates: {},
-      ragModel: "deepseek-chat",
-      ragToolModel: "",
+      ragModel: prefs.selectedModel,
+      ragToolModel: prefs.selectedToolModel,
       query: { text: "", topK: 5 },
       queryResult: "",
       status: "",
@@ -139,10 +141,24 @@ export default {
     this.loadOptions();
     this.loadDocs(true);
   },
+  watch: {
+    ragModel() {
+      this.persistSessionPreferences();
+    },
+    ragToolModel() {
+      this.persistSessionPreferences();
+    }
+  },
   beforeUnmount() {
     this.clearTaskPoll();
   },
   methods: {
+    persistSessionPreferences() {
+      saveChatSessionPreferences({
+        selectedModel: this.ragModel,
+        selectedToolModel: this.ragToolModel
+      });
+    },
     async loadOptions() {
       try {
         const models = await apiRequest("/api/chat/models/options");
@@ -152,6 +168,7 @@ export default {
         if (this.modelOptions.length && !this.modelOptions.includes(this.ragModel)) {
           this.ragModel = this.modelOptions[0];
         }
+        this.persistSessionPreferences();
       } catch (e) {
         this.status = e.message;
       }
@@ -220,6 +237,7 @@ export default {
     },
     async createRagSession() {
       try {
+        this.persistSessionPreferences();
         const query = new URLSearchParams();
         if (this.ragModel) query.set("model", this.ragModel);
         if (this.ragToolModel) query.set("toolModel", this.ragToolModel);

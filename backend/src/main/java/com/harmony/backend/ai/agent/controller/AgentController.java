@@ -1,6 +1,8 @@
 package com.harmony.backend.ai.agent.controller;
 
 import com.harmony.backend.ai.agent.controller.request.AgentUpsertRequest;
+import com.harmony.backend.ai.agent.controller.response.AgentRunTraceVO;
+import com.harmony.backend.ai.agent.controller.response.AgentRunStatusVO;
 import com.harmony.backend.ai.agent.controller.response.AgentVO;
 import com.harmony.backend.ai.agent.service.AgentService;
 import com.harmony.backend.ai.skill.AgentSkillDefinition;
@@ -46,18 +48,49 @@ public class AgentController {
         return ApiResponse.success(toolExecutor.execute(request));
     }
 
+    @GetMapping("/runs/{executionId}")
+    public ApiResponse<AgentRunStatusVO> getRunStatus(@PathVariable String executionId) {
+        Long userId = RequestUtils.getCurrentUserId();
+        boolean isAdmin = RequestUtils.isAdmin();
+        try {
+            return ApiResponse.success(agentService.getRunStatus(executionId, userId, isAdmin));
+        } catch (BusinessException e) {
+            return ApiResponse.error(e.getCode(), e.getMessage());
+        }
+    }
+
+    @PostMapping("/runs/{executionId}/cancel")
+    public ApiResponse<AgentRunStatusVO> cancelRun(@PathVariable String executionId) {
+        Long userId = RequestUtils.getCurrentUserId();
+        boolean isAdmin = RequestUtils.isAdmin();
+        try {
+            return ApiResponse.success(agentService.cancelRun(executionId, userId, isAdmin));
+        } catch (BusinessException e) {
+            return ApiResponse.error(e.getCode(), e.getMessage());
+        }
+    }
+
+    @GetMapping("/runs/{executionId}/trace")
+    public ApiResponse<AgentRunTraceVO> getRunTrace(@PathVariable String executionId) {
+        Long userId = RequestUtils.getCurrentUserId();
+        boolean isAdmin = RequestUtils.isAdmin();
+        try {
+            return ApiResponse.success(agentService.getRunTrace(executionId, userId, isAdmin));
+        } catch (BusinessException e) {
+            return ApiResponse.error(e.getCode(), e.getMessage());
+        }
+    }
+
     @GetMapping("/public")
-    public ApiResponse<PageResult<AgentVO>> listPublic(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String keyword) {
+    public ApiResponse<PageResult<AgentVO>> listPublic(@RequestParam(defaultValue = "1") int page,
+                                                       @RequestParam(defaultValue = "20") int size,
+                                                       @RequestParam(required = false) String keyword) {
         return ApiResponse.success(agentService.listPublic(page, size, keyword));
     }
 
     @GetMapping("/mine")
-    public ApiResponse<PageResult<AgentVO>> listMine(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int size) {
+    public ApiResponse<PageResult<AgentVO>> listMine(@RequestParam(defaultValue = "1") int page,
+                                                     @RequestParam(defaultValue = "20") int size) {
         Long userId = RequestUtils.getCurrentUserId();
         return ApiResponse.success(agentService.listMine(userId, page, size));
     }
@@ -88,8 +121,7 @@ public class AgentController {
     }
 
     @PutMapping("/{agentId}")
-    public ApiResponse<AgentVO> update(@PathVariable String agentId,
-                                       @RequestBody AgentUpsertRequest request) {
+    public ApiResponse<AgentVO> update(@PathVariable String agentId, @RequestBody AgentUpsertRequest request) {
         Long userId = RequestUtils.getCurrentUserId();
         boolean isAdmin = RequestUtils.isAdmin();
         try {

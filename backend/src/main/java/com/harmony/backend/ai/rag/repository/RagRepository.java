@@ -89,9 +89,10 @@ public class RagRepository {
     public List<RagChunkCandidate> searchCandidates(Long userId, float[] embedding, int topK) {
         PGvector vector = new PGvector(embedding);
         return ragJdbcTemplate.query(
-                "SELECT id, doc_id, embedding, chunk_metadata, distance FROM (" +
-                        " SELECT id, doc_id, embedding, chunk_metadata, (embedding <-> ?) AS distance " +
-                        " FROM rag_chunk WHERE user_id = ? " +
+                "SELECT id, doc_id, doc_title, content, embedding, chunk_metadata, distance FROM (" +
+                        " SELECT c.id, c.doc_id, d.title AS doc_title, c.content, c.embedding, c.chunk_metadata, (c.embedding <-> ?) AS distance " +
+                        " FROM rag_chunk c JOIN rag_document d ON d.doc_id = c.doc_id " +
+                        " WHERE c.user_id = ? AND d.is_deleted = false " +
                         ") t ORDER BY distance LIMIT ?",
                 new Object[]{vector, userId, topK},
                 new RagChunkCandidateMapper()
@@ -346,6 +347,7 @@ public class RagRepository {
         @Override
         public RagChunkMatch mapRow(ResultSet rs, int rowNum) throws SQLException {
             String docId = rs.getString("doc_id");
+            String docTitle = rs.getString("doc_title");
             String content = rs.getString("content");
             double distance = rs.getDouble("distance");
             double score = 1.0 / (1.0 + distance);
@@ -358,6 +360,8 @@ public class RagRepository {
         public RagChunkCandidate mapRow(ResultSet rs, int rowNum) throws SQLException {
             long id = rs.getLong("id");
             String docId = rs.getString("doc_id");
+            String docTitle = rs.getString("doc_title");
+            String content = rs.getString("content");
             double distance = rs.getDouble("distance");
             float[] embedding = null;
             Object vectorObj = rs.getObject("embedding");
@@ -370,7 +374,7 @@ public class RagRepository {
                     embedding = null;
                 }
             }
-            return new RagChunkCandidate(id, docId, null, embedding, distance, rs.getString("chunk_metadata"));
+            return new RagChunkCandidate(id, docId, docTitle, content, embedding, distance, rs.getString("chunk_metadata"));
         }
     }
 
@@ -410,3 +414,4 @@ public class RagRepository {
         }
     }
 }
+

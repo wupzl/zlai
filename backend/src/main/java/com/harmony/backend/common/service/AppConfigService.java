@@ -10,4 +10,6 @@ public interface AppConfigService {
     Map<String, String> getValues(List<String> keys);
 
     void setValue(String key, String value, Long updatedBy);
+
+    void invalidate(String key);
 }

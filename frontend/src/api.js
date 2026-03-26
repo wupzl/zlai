@@ -1,61 +1,69 @@
+import { useUserStore } from "./stores/user";
+import { useNotificationStore } from "./stores/notification";
+import { pinia } from "./stores/pinia";
+
 const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
 
 const DEFAULT_FETCH_OPTIONS = {
   credentials: "include"
 };
 
-const AUTH_CACHE_KEY = "userInfo";
-const AUTH_CHECKED_AT_KEY = "authCheckedAt";
 const AUTH_CACHE_TTL_MS = 2 * 60 * 1000;
 
 let refreshPromise = null;
 let sessionPromise = null;
 
-export function setUserInfo(info) {
-  if (!info) {
-    localStorage.removeItem(AUTH_CACHE_KEY);
-    localStorage.removeItem(AUTH_CHECKED_AT_KEY);
-    return;
-  }
-  localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(info));
-  localStorage.setItem(AUTH_CHECKED_AT_KEY, String(Date.now()));
-}
-
-export function getUserInfo() {
-  const raw = localStorage.getItem(AUTH_CACHE_KEY);
-  if (!raw) return null;
+/**
+ * Legacy compatibility / internal helpers
+ * Now delegates to userStore where possible
+ */
+function getStore() {
   try {
-    return JSON.parse(raw);
-  } catch {
+    const store = useUserStore(pinia);
+    store.syncFromStorage?.();
+    return store;
+  } catch (e) {
+    // Fail-safe for non-vue context if needed
     return null;
   }
 }
 
+function getNotificationStore() {
+  try {
+    return useNotificationStore(pinia);
+  } catch (e) {
+    return null;
+  }
+}
+
+export function setUserInfo(info) {
+  getStore()?.setUserInfo(info);
+}
+
+export function getUserInfo() {
+  return getStore()?.userInfo || null;
+}
+
 export function getUserRole() {
-  return String(getUserInfo()?.role || "").toUpperCase();
+  return getStore()?.userRole || "";
 }
 
 export function isAdmin() {
-  return getUserRole() === "ADMIN";
+  return getStore()?.isAdmin || false;
 }
 
 export function clearUserInfo() {
-  localStorage.removeItem(AUTH_CACHE_KEY);
-  localStorage.removeItem(AUTH_CHECKED_AT_KEY);
+  getStore()?.clearUserInfo();
 }
 
 export function clearAuthState() {
   clearUserInfo();
 }
 
-function getAuthCheckedAt() {
-  const raw = localStorage.getItem(AUTH_CHECKED_AT_KEY);
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : 0;
-}
-
 function isAuthCacheFresh() {
-  const checkedAt = getAuthCheckedAt();
+  const store = getStore();
+  if (!store) return false;
+  const checkedAt = store.authCheckedAt || 0;
   return checkedAt > 0 && Date.now() - checkedAt < AUTH_CACHE_TTL_MS;
 }
 
@@ -119,17 +127,25 @@ async function refreshAccessToken() {
   return true;
 }
 
+/**
+ * T002: Enhanced authFetch with interceptor-like logic
+ */
 export async function authFetch(path, options = {}) {
   const headers = {
     ...(options.headers || {})
   };
 
-  let res = await fetch(`${API_BASE}${path}`, {
-    ...DEFAULT_FETCH_OPTIONS,
-    ...options,
-    headers
-  });
+  const executeFetch = async () => {
+    return fetch(`${API_BASE}${path}`, {
+      ...DEFAULT_FETCH_OPTIONS,
+      ...options,
+      headers
+    });
+  };
 
+  let res = await executeFetch();
+
+  // Handle 401 Unauthorized (Token expired)
   if (res.status === 401 && !path.includes("/api/user/refresh")) {
     if (!refreshPromise) {
       refreshPromise = refreshAccessToken().finally(() => {
@@ -138,22 +154,14 @@ export async function authFetch(path, options = {}) {
     }
     const refreshed = await refreshPromise;
     if (refreshed) {
-      res = await fetch(`${API_BASE}${path}`, {
-        ...DEFAULT_FETCH_OPTIONS,
-        ...options,
-        headers
-      });
+      res = await executeFetch();
     } else {
       redirectToLogin();
-      throw new Error("Unauthorized");
+      throw new Error("Session expired. Please login again.");
     }
   }
 
-  if (path.includes("/api/user/refresh") && res.status === 401) {
-    redirectToLogin();
-    throw new Error("Unauthorized");
-  }
-
+  // Handle terminal 401/403
   if (res.status === 401 || res.status === 403) {
     redirectToLogin();
   }
@@ -161,6 +169,9 @@ export async function authFetch(path, options = {}) {
   return res;
 }
 
+/**
+ * Unified API Request wrapper with global error handling
+ */
 export async function apiRequest(path, options = {}) {
   const headers = {
     "Content-Type": "application/json",
@@ -170,12 +181,17 @@ export async function apiRequest(path, options = {}) {
     ...options,
     headers
   });
+  
   const data = await res.json().catch(() => ({}));
+  
   if (!res.ok || (data && data.code && data.code !== 200)) {
-    const errMsg = data?.message || "Request failed";
-    if (res.status === 401 || res.status === 403 || data?.code === 401 || data?.code === 403) {
+    const errMsg = data?.message || `Request failed with status ${res.status}`;
+    // If backend returns 401 in body even if HTTP was 200/other
+    if (data?.code === 401 || data?.code === 403) {
       redirectToLogin();
     }
+    // T008: Global error notification
+    getNotificationStore()?.error(errMsg);
     throw new Error(errMsg);
   }
   return data?.data ?? data;
@@ -211,7 +227,8 @@ export async function logout() {
       headers: { "Content-Type": "application/json" },
       body: "{}"
     });
-  } catch {
+  } catch (e) {
+    console.error("Logout request failed", e);
   } finally {
     clearAuthState();
   }

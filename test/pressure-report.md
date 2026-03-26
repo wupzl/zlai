@@ -1,85 +1,143 @@
-# 压测报告（k6）
+# Pressure Report
 
-## 测试环境与配置
-- 后端：`http://localhost:8080`
-- 数据库：MySQL + Redis + PostgreSQL（RAG）
-- LLM：Mock 模式（`app.llm.mock-enabled=true`）
-- 压测工具：k6
-- 模型：`mock-chat`
-- 账号：`test01/test02/test03`（已增加余额）
+## Scope
 
-> 说明：Mock LLM 用于排除模型响应时延的影响，以评估后端服务吞吐与稳定性。
+This report is the runtime-hardening verification note for the current k6 scripts. It is not a blanket claim that the system is production-ready under all real-model traffic.
 
----
+## Environment Assumptions
 
-## 1. 核心聊天链路压测（k6-load.js）
-**目标**：验证基础聊天路径（会话创建 + 发送消息）稳定性与落库一致性  
+- Backend: `http://localhost:8080`
+- Data stores: MySQL + Redis + PostgreSQL
+- Test users: `test01`, `test02`, `test03`
+- Default model in pressure scripts: `deepseek-chat`
+- Unless explicitly stated otherwise, older baseline runs used mock or low-variance model behavior and should not be treated as proof for real external-model latency tolerance.
 
-**结果摘要**
-- 429：0
-- 5xx：0
-- 消息成功：889
-- 消息失败：0
-- 未落库：0
-- 结论：**PASS**
+## Current Verification Targets
 
-**日志摘要**
-```
-Rate limited (429) responses: 0
-Server errors (5xx): 0
-Message success: 889, fail: 0
-Empty message responses: 0
-Message not persisted: 0
-Result: PASS
-```
+### `k6-load.js`
 
----
+Validate the core chat chain under bounded concurrent load:
 
-## 2. 混合业务压测（k6-mix.js）
-**目标**：混合聊天 + GPT Store + Agent + RAG 查询，验证全链路稳定性  
+- session lookup and creation
+- sync chat send path
+- message persistence
+- optional stream path
+- duplicate request replay or in-flight conflict behavior
+- long-session repeated turns on the same chat
 
-**结果摘要**
-- 429：0
-- 5xx：0
-- 消息成功：496
-- 消息失败：0
-- 未落库：0
-- 结论：**PASS**
+Pass criteria:
 
-**日志摘要**
-```
-Rate limited (429) responses: 0
-Server errors (5xx): 0
-Message success: 496, fail: 0
-Empty message responses: 0
-Message not persisted: 0
-Result: PASS
-```
+- no unexpected `5xx`
+- no empty success payloads
+- no missing persisted user messages
+- duplicate replay remains bounded to acceptable outcomes: `200` replay or `409` in-flight rejection
 
----
+### `k6-mix.js`
 
-## 3. RAG 压测（k6-rag.js）
-**目标**：文档上传 + 检索链路稳定性  
+Validate mixed traffic under bounded concurrent load:
 
-**结果摘要**
-- p95：511ms（阈值 4s 内）
-- 失败率：0.92%（1 次失败）
-- 结论：**整体可接受**
+- chat sync and optional stream
+- GPT Store browsing
+- agent listing
+- RAG query
+- async RAG ingest contention
 
-**日志摘要**
-```
-http_req_duration p(95)=511.13ms
-http_req_failed rate=0.92% (1/108)
-checks_succeeded 98.61%
+Pass criteria:
+
+- no unexpected `5xx`
+- no chat persistence regressions
+- async RAG ingest either succeeds with `200` or degrades explicitly with `503`
+
+## Important Caveats
+
+- Real provider latency, rate limits, and streaming behavior may be significantly worse than local or mock baselines.
+- These scripts validate bounded degradation and common runtime regressions, not absolute throughput limits.
+- Real production readiness still requires runs with real model latency, realistic document sizes, and representative user concurrency.
+
+## Recommended Execution
+
+```bash
+k6 run test/k6-load.js
+k6 run test/k6-mix.js
 ```
 
-> 说明：RAG 组件存在轻微波动，属于可接受范围，若需要 100% 稳定可增加重试或降低并发。
+Optional environment overrides:
 
----
+- `BASE_URL`
+- `MODEL`
+- `STREAM=true|false`
+- `DUPLICATE_REPLAY=true|false`
+- `LONG_SESSION_TURNS=<n>`
+- `ASYNC_INGEST=true|false`
 
-## 总结
-- **核心聊天与混合业务流量稳定（PASS）**
-- **RAG 模块稳定性良好（轻微波动）**
-- 已验证：无 429、无 5xx、消息全部落库
-- 系统具备面试级别的可靠性与可观测性
+## Result Recording Template
 
+Record each run with:
+
+- date and environment
+- whether mock or real model endpoints were used
+- VU/stage settings
+- 429 count
+- 5xx count
+- duplicate replay bounded result
+- persistence failures
+- async ingest busy vs accepted counts
+- final pass/fail decision
+
+## Interpretation Rule
+
+If a run only proves correctness under mock or low-latency dependencies, label it as:
+
+`runtime-regression pass under non-production dependency profile`
+
+Do not label it as full high-concurrency production proof.
+
+## Latest Recorded Runs
+
+### 2026-03-21 Scenario A: Real LLM, low concurrency, non-stream
+
+Command:
+
+```bash
+k6 run --stage 10s:3 --stage 20s:6 --stage 20s:10 --stage 10s:0 -e STREAM=false -e MODEL=deepseek-chat test/k6-load.js
+```
+
+Observed result:
+
+- `5xx = 0`
+- `429 = 0`
+- `message_success = 45`
+- `duplicate_replay_bounded_ok = 15`
+- `message_persist_fail = 0`
+- functional result: PASS
+- performance threshold result: FAIL
+
+Interpretation:
+
+- The sync chat chain, persistence, and duplicate request handling behaved correctly under low real-model concurrency.
+- The k6 latency threshold was crossed, so this is not a performance pass.
+
+### 2026-03-21 Scenario B: Mock LLM, higher concurrency, non-stream
+
+Command:
+
+```bash
+k6 run --stage 15s:10 --stage 30s:40 --stage 30s:60 --stage 15s:0 -e STREAM=false -e DUPLICATE_REPLAY=true -e LONG_SESSION_TURNS=4 -e MODEL=deepseek-chat test/k6-load.js
+```
+
+Observed result:
+
+- `5xx = 0`
+- `429 = 17924`
+- `message_success = 228`
+- `message_fail = 10616`
+- `message_persist_fail = 322`
+- `duplicate_replay_bounded_ok = 62`
+- `duplicate_replay_fail = 2649`
+- overall result: FAIL
+
+Interpretation:
+
+- The service degraded by rejecting load rather than crashing, which is better than overload collapse.
+- The current rate-limit envelope is the dominant limiter under this pressure profile.
+- This run does not qualify as a high-concurrency pass; it shows bounded rejection, not sustained throughput success.
