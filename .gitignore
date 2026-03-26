@@ -134,3 +134,17 @@ backend/src/main/resources/application-local.yml
 backend/src/main/resources/application-local.yaml
 backend/src/main/resources/application-dev-local.yml
 backend/src/main/resources/application-dev-local.yaml
+
+# Explicit sensitive local files
+/login.json
+/backend/.env
+/.env.properties
+/backend/.env.properties
+
+# Local/private deployment and dev config
+/backend/copy.yml
+/backend/src/main/resources/application-dev.yaml
+
+# Local database snapshots
+/backend/db/zlai.sql
+/backend/db/zlai_pg.sql
